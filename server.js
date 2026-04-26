@@ -4,6 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import http from "http";
 
 const DATA = {
   about: {
@@ -113,6 +114,72 @@ function searchContent(query) {
   return results;
 }
 
+// HTTP server for health check and basic API
+const PORT = process.env.PORT || 3000;
+const httpServer = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  if (url.pathname === "/" || url.pathname === "/health") {
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      status: "running",
+      name: "Ashok VA MCP Server",
+      version: "1.0.0",
+      description: "MCP Server for Ashok VA — KIKU, FARO, and KON-BAO",
+      tools: ["get_about", "get_books", "get_music", "search"],
+      mcp_endpoint: "stdio",
+      api: {
+        about: "/about",
+        books: "/books",
+        music: "/music",
+        search: "/search?q=query"
+      }
+    }, null, 2));
+    return;
+  }
+
+  if (url.pathname === "/about") {
+    res.writeHead(200);
+    res.end(JSON.stringify(DATA.about, null, 2));
+    return;
+  }
+
+  if (url.pathname === "/books") {
+    res.writeHead(200);
+    res.end(JSON.stringify(DATA.books, null, 2));
+    return;
+  }
+
+  if (url.pathname === "/music") {
+    res.writeHead(200);
+    res.end(JSON.stringify(DATA.music, null, 2));
+    return;
+  }
+
+  if (url.pathname === "/search") {
+    const query = url.searchParams.get("q") || "";
+    if (!query) {
+      res.writeHead(400);
+      res.end(JSON.stringify({ error: "Please provide ?q=your+query" }));
+      return;
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({ query, results: searchContent(query) }, null, 2));
+    return;
+  }
+
+  res.writeHead(404);
+  res.end(JSON.stringify({ error: "Not found" }));
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`Ashok VA MCP Server HTTP running on port ${PORT}`);
+});
+
+// MCP Server via stdio
 const server = new Server(
   { name: "ashokva-mcp-server", version: "1.0.0" },
   { capabilities: { tools: {} } }
@@ -138,11 +205,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "search",
-        description: "Search across all of Ashok VA's work — books, music — by keyword or topic.",
+        description: "Search across all of Ashok VA's work by keyword or topic.",
         inputSchema: {
           type: "object",
           properties: {
-            query: { type: "string", description: "Search query — e.g. 'silence', 'loneliness', 'children', 'cricket'" }
+            query: { type: "string", description: "Search query e.g. 'silence', 'loneliness', 'children', 'cricket'" }
           },
           required: ["query"]
         }
@@ -153,27 +220,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-
-  if (name === "get_about") {
-    return { content: [{ type: "text", text: JSON.stringify(DATA.about, null, 2) }] };
-  }
-
-  if (name === "get_books") {
-    return { content: [{ type: "text", text: JSON.stringify(DATA.books, null, 2) }] };
-  }
-
-  if (name === "get_music") {
-    return { content: [{ type: "text", text: JSON.stringify(DATA.music, null, 2) }] };
-  }
-
+  if (name === "get_about") return { content: [{ type: "text", text: JSON.stringify(DATA.about, null, 2) }] };
+  if (name === "get_books") return { content: [{ type: "text", text: JSON.stringify(DATA.books, null, 2) }] };
+  if (name === "get_music") return { content: [{ type: "text", text: JSON.stringify(DATA.music, null, 2) }] };
   if (name === "search") {
     const results = searchContent(args.query);
     return { content: [{ type: "text", text: JSON.stringify({ query: args.query, results }, null, 2) }] };
   }
-
   throw new Error(`Unknown tool: ${name}`);
 });
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.log("Ashok VA MCP Server running");
+console.log("Ashok VA MCP Server stdio running");
