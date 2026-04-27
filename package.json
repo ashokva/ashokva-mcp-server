@@ -1,13 +1,17 @@
 {
   "name": "ashokva-mcp-server",
   "version": "1.0.0",
-  "description": "MCP Server for Ashok VA",
+  "description": "MCP Server and KON-BAO agent for Ashok VA",
   "main": "server.js",
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "konbao": "node konbao.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "node-fetch": "^3.0.0",
+    "resend": "^3.0.0"
   },
   "engines": {
     "node": ">=18.0.0"
