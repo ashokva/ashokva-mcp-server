@@ -260,7 +260,7 @@ async function sendReport(findings) {
 
   try {
     await resend.emails.send({
-      from: "KON-BAO <hello@ashokva.net>",
+      from: "KON-BAO <onboarding@resend.dev>",
       to: REPORT_EMAIL,
       subject: `KON-BAO: ${findings.length} conversations found · ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
       html
