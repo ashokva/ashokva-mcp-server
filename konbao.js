@@ -3,7 +3,7 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const REPORT_EMAIL = "hello@ashokva.net";
+const REPORT_EMAIL = "konbao369@gmail.com";
 const AGENT_NAME = "KON-BAO";
 
 // Subreddits to monitor
