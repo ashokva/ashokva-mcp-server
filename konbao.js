@@ -272,4 +272,10 @@ async function sendReport(findings) {
 }
 
 // Run immediately
-runKonBao();
+runKonBao().then(() => {
+  console.log("KON-BAO finished. Exiting.");
+  process.exit(0);
+}).catch((error) => {
+  console.error("KON-BAO error:", error);
+  process.exit(1);
+});
