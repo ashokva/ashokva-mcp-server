@@ -7,6 +7,7 @@ const BSKY_PASSWORD = process.env.BSKY_PASSWORD;
 
 const REPORT_EMAIL = "konbao369@gmail.com";
 const AGENT_NAME = "KON-BAO";
+const MAX_PER_CATEGORY = 10;
 
 const SUBREDDITS = [
   "lonely", "suggestmeabook", "meditation",
@@ -80,20 +81,19 @@ function scorePost(title, body) {
   return { score, signals, category };
 }
 
-function suggestResponse(post, category) {
+function suggestResponse(category) {
   if (category === "KIKU") {
-    return `I hear you. If it helps at all — there's a short philosophical fable called KIKU: A Journey Through the Silence by Ashok VA. It's about a Traveller who meets a silent Creature in the desert. The Creature never speaks. It only listens. In that silence, the Traveller slowly finds themselves. It's not a fix. Just a companion for the kind of moment you're describing. https://www.ashokva.net/#kiku`;
+    return `What you're carrying comes through. If you ever want company in that silence rather than advice about it — there's a short fable called KIKU: A Journey Through the Silence by Ashok VA. A nameless Traveller. A Creature that only listens. No fixing. No answers. Just presence. It might be the right thing for this moment, or not. ashokva.net/#kiku`;
   }
   if (category === "FARO") {
-    return `Something that might help — FARO: For the Mind That Does a Lot. It's a short 18-page manual, not a productivity system. Just four simple tools for when everything feels like too much. https://www.ashokva.net/#faro`;
+    return `When the mind won't slow down, sometimes the smallest structure helps. FARO: For the Mind That Does a Lot is 18 pages — four simple tools, nothing complicated. Made by someone who knows what it's like to have too much going on at once. Worth a look if you're in that place. ashokva.net/#faro`;
   }
   if (category === "LA_THA_LA") {
-    return `If you're a cricket fan — especially a Dhoni fan — there's a song called La Tha La by KON-BAO that might make you smile. Composed from two sounds: La and Tha — together they make Thala. Hidden Morse code message in the lyrics. https://open.spotify.com/artist/0Q9FBcR9T6PrEl4iLe5Xxd`;
+    return `For a Dhoni fan — there's a song called La Tha La by KON-BAO that might make you smile. Built from just two sounds: La and Tha. Together they make Thala. There's a hidden Morse code message in the lyrics. A small thing made with a lot of love for cricket. open.spotify.com/artist/0Q9FBcR9T6PrEl4iLe5Xxd`;
   }
   return null;
 }
 
-// Fetch posts from Reddit
 async function fetchSubreddit(subreddit) {
   try {
     const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=25`;
@@ -117,16 +117,12 @@ async function fetchSubreddit(subreddit) {
   }
 }
 
-// Authenticate with Bluesky
 async function bskyLogin() {
   try {
     const response = await fetch("https://bsky.social/xrpc/com.atproto.server.createSession", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        identifier: BSKY_IDENTIFIER,
-        password: BSKY_PASSWORD
-      })
+      body: JSON.stringify({ identifier: BSKY_IDENTIFIER, password: BSKY_PASSWORD })
     });
     if (!response.ok) {
       console.log("Bluesky login failed:", response.status);
@@ -141,7 +137,6 @@ async function bskyLogin() {
   }
 }
 
-// Search Bluesky posts
 async function searchBluesky(token, query) {
   try {
     const url = `https://bsky.social/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=20`;
@@ -160,38 +155,31 @@ async function searchBluesky(token, query) {
   }
 }
 
-// Main agent function
 async function runKonBao() {
   console.log(`${AGENT_NAME} is listening...`);
 
-  const findings = [];
+  const allFindings = [];
   const cutoffTime = Date.now() / 1000 - (24 * 60 * 60);
   const seenUrls = new Set();
 
-  // Reddit monitoring
+  // Reddit
   console.log("--- Checking Reddit ---");
   for (const subreddit of SUBREDDITS) {
     console.log(`Checking r/${subreddit}...`);
     const posts = await fetchSubreddit(subreddit);
-
     for (const post of posts) {
       if (post.created_utc < cutoffTime) continue;
       if (post.score > 500) continue;
-
       const { score, signals, category } = scorePost(post.title, post.selftext);
       if (score >= 2) {
         const url = `https://reddit.com${post.permalink}`;
         if (!seenUrls.has(url)) {
           seenUrls.add(url);
-          findings.push({
+          allFindings.push({
             platform: "Reddit",
-            subreddit: `r/${subreddit}`,
+            source: `r/${subreddit}`,
             title: post.title,
-            url,
-            score,
-            signals,
-            category,
-            suggestedResponse: suggestResponse(post, category),
+            url, score, signals, category,
             postScore: post.score,
             comments: post.num_comments,
             created: new Date(post.created_utc * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
@@ -202,15 +190,13 @@ async function runKonBao() {
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
-  // Bluesky monitoring
+  // Bluesky
   console.log("--- Checking Bluesky ---");
   const bskyToken = await bskyLogin();
-
   if (bskyToken) {
     for (const term of BSKY_SEARCH_TERMS) {
       console.log(`Searching Bluesky for "${term}"...`);
       const posts = await searchBluesky(bskyToken, term);
-
       for (const post of posts) {
         const text = post.record?.text || "";
         const { score, signals, category } = scorePost(text, "");
@@ -218,15 +204,11 @@ async function runKonBao() {
           const url = `https://bsky.app/profile/${post.author?.handle}/post/${post.uri?.split("/").pop()}`;
           if (!seenUrls.has(url)) {
             seenUrls.add(url);
-            findings.push({
+            allFindings.push({
               platform: "Bluesky",
-              subreddit: `@${post.author?.handle}`,
-              title: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
-              url,
-              score,
-              signals,
-              category,
-              suggestedResponse: suggestResponse({ title: text }, category),
+              source: `@${post.author?.handle}`,
+              title: text.substring(0, 120) + (text.length > 120 ? "..." : ""),
+              url, score, signals, category,
               postScore: post.likeCount || 0,
               comments: post.replyCount || 0,
               created: new Date(post.indexedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
@@ -236,78 +218,134 @@ async function runKonBao() {
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-  } else {
-    console.log("Skipping Bluesky — login failed");
   }
 
-  findings.sort((a, b) => b.score - a.score);
-  console.log(`KON-BAO found ${findings.length} relevant conversations.`);
-  await sendReport(findings);
+  // Categorise and sort
+  const categories = {
+    KIKU: allFindings.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    FARO: allFindings.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    LA_THA_LA: allFindings.filter(f => f.category === "LA_THA_LA").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY)
+  };
+
+  const total = categories.KIKU.length + categories.FARO.length + categories.LA_THA_LA.length;
+  console.log(`KON-BAO found ${total} relevant conversations (capped at ${MAX_PER_CATEGORY} per category).`);
+  await sendReport(categories, total);
 }
 
-async function sendReport(findings) {
+async function sendReport(categories, total) {
   const date = new Date().toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata",
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric"
+    weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
 
-  let html = `
-    <div style="font-family: Georgia, serif; max-width: 700px; margin: 0 auto; color: #2c2c2c;">
-      <h1 style="font-size: 24px; border-bottom: 1px solid #ddd; padding-bottom: 12px;">
-        KON-BAO Daily Report
-      </h1>
-      <p style="color: #666; font-size: 14px;">${date} · ${findings.length} conversations found</p>
-  `;
+  const kikuCount = categories.KIKU.length;
+  const faroCount = categories.FARO.length;
+  const laCount = categories.LA_THA_LA.length;
 
-  if (findings.length === 0) {
-    html += `
-      <p style="font-style: italic; color: #888;">
-        KON-BAO listened today. The silence was appropriate. Nothing worth surfacing.
-      </p>
-    `;
-  } else {
-    findings.forEach((f) => {
-      html += `
-        <div style="border: 1px solid #eee; border-radius: 8px; padding: 20px; margin: 20px 0;">
-          <div style="font-size: 11px; color: #888; margin-bottom: 8px;">
-            ${f.platform} · ${f.subreddit} · ${f.created} · ${f.postScore} likes · ${f.comments} replies
-          </div>
-          <h2 style="font-size: 16px; margin: 0 0 8px 0;">
-            <a href="${f.url}" style="color: #c0392b; text-decoration: none;">${f.title}</a>
-          </h2>
-          <div style="font-size: 12px; color: #888; margin-bottom: 12px;">
-            Signals: ${f.signals.join(", ")} · Category: ${f.category}
-          </div>
-          ${f.suggestedResponse ? `
-            <div style="background: #f9f9f9; border-left: 3px solid #c0392b; padding: 12px; font-size: 14px; line-height: 1.6;">
-              <strong style="font-size: 11px; color: #888; display: block; margin-bottom: 6px;">SUGGESTED RESPONSE:</strong>
-              ${f.suggestedResponse}
-            </div>
-          ` : ""}
-          <div style="margin-top: 12px;">
-            <a href="${f.url}" style="font-size: 12px; color: #c0392b;">View conversation →</a>
-          </div>
+  function renderCard(f) {
+    const response = suggestResponse(f.category);
+    return `
+      <div style="border: 1px solid #eee; border-radius: 8px; padding: 18px; margin: 12px 0; background: #fff;">
+        <div style="font-size: 11px; color: #aaa; margin-bottom: 6px;">
+          ${f.platform} · ${f.source} · ${f.created} · ${f.postScore} likes · ${f.comments} replies
         </div>
-      `;
-    });
+        <div style="font-size: 15px; font-weight: bold; margin-bottom: 8px;">
+          <a href="${f.url}" style="color: #1a1a1a; text-decoration: none;">${f.title}</a>
+        </div>
+        <div style="font-size: 11px; color: #bbb; margin-bottom: 10px;">
+          Signals: ${f.signals.join(", ")}
+        </div>
+        ${response ? `
+        <div style="background: #fafafa; border-left: 3px solid #8B1A1A; padding: 12px; font-size: 13px; line-height: 1.7; color: #333; border-radius: 0 4px 4px 0;">
+          <div style="font-size: 10px; color: #aaa; margin-bottom: 6px; letter-spacing: 0.5px;">SUGGESTED RESPONSE</div>
+          ${response}
+        </div>` : ""}
+        <div style="margin-top: 10px;">
+          <a href="${f.url}" style="font-size: 12px; color: #8B1A1A; text-decoration: none;">View conversation →</a>
+        </div>
+      </div>
+    `;
   }
 
-  html += `
-      <p style="font-size: 12px; color: #aaa; border-top: 1px solid #eee; padding-top: 12px; margin-top: 24px;">
-        KON-BAO — listening quietly, on behalf of Ashok VA and KIKU.<br>
-        These are suggestions only. You decide whether and how to respond.
-      </p>
+  function renderSection(id, emoji, title, color, findings, description) {
+    if (findings.length === 0) return "";
+    return `
+      <div id="${id}" style="margin-top: 32px;">
+        <div style="border-left: 4px solid ${color}; padding-left: 12px; margin-bottom: 16px;">
+          <div style="font-size: 18px; font-weight: bold; color: #1a1a1a;">${emoji} ${title}</div>
+          <div style="font-size: 12px; color: #999; margin-top: 2px;">${findings.length} conversation${findings.length !== 1 ? "s" : ""} · ${description}</div>
+        </div>
+        ${findings.map(renderCard).join("")}
+        <div style="text-align: right; margin-top: 8px;">
+          <a href="#top" style="font-size: 11px; color: #aaa; text-decoration: none;">↑ Back to top</a>
+        </div>
+      </div>
+    `;
+  }
+
+  const html = `
+  <div id="top" style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a; padding: 20px 0;">
+
+    <!-- HEADER -->
+    <div style="border-bottom: 2px solid #1a1a1a; padding-bottom: 16px; margin-bottom: 20px;">
+      <div style="font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">KON-BAO Daily Report</div>
+      <div style="font-size: 13px; color: #888; margin-top: 4px;">${date}</div>
     </div>
+
+    <!-- SUMMARY DASHBOARD -->
+    <div style="background: #f7f7f7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+      <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">TODAY'S OVERVIEW</div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        ${kikuCount > 0 ? `
+        <a href="#kiku" style="text-decoration: none; background: white; border: 1px solid #eee; border-radius: 8px; padding: 10px 16px; flex: 1; min-width: 120px;">
+          <div style="font-size: 22px; font-weight: bold; color: #8B1A1A;">${kikuCount}</div>
+          <div style="font-size: 12px; color: #888; margin-top: 2px;">🌿 KIKU</div>
+        </a>` : ""}
+        ${faroCount > 0 ? `
+        <a href="#faro" style="text-decoration: none; background: white; border: 1px solid #eee; border-radius: 8px; padding: 10px 16px; flex: 1; min-width: 120px;">
+          <div style="font-size: 22px; font-weight: bold; color: #1A5C8B;">${faroCount}</div>
+          <div style="font-size: 12px; color: #888; margin-top: 2px;">🔦 FARO</div>
+        </a>` : ""}
+        ${laCount > 0 ? `
+        <a href="#lathala" style="text-decoration: none; background: white; border: 1px solid #eee; border-radius: 8px; padding: 10px 16px; flex: 1; min-width: 120px;">
+          <div style="font-size: 22px; font-weight: bold; color: #1A7A3A;">${laCount}</div>
+          <div style="font-size: 12px; color: #888; margin-top: 2px;">🏏 LA THA LA</div>
+        </a>` : ""}
+      </div>
+      <div style="font-size: 11px; color: #ccc; margin-top: 12px; text-align: right;">
+        Tap a number to jump to that section
+      </div>
+    </div>
+
+    ${total === 0 ? `
+    <div style="text-align: center; padding: 40px 20px; color: #aaa; font-style: italic;">
+      KON-BAO listened today.<br>The silence was appropriate. Nothing worth surfacing.
+    </div>` : ""}
+
+    <!-- KIKU SECTION -->
+    ${renderSection("kiku", "🌿", "KIKU", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning")}
+
+    <!-- FARO SECTION -->
+    ${renderSection("faro", "🔦", "FARO", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds")}
+
+    <!-- LA THA LA SECTION -->
+    ${renderSection("lathala", "🏏", "La Tha La", "#1A7A3A", categories.LA_THA_LA, "Cricket · Dhoni · IPL")}
+
+    <!-- FOOTER -->
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
+      KON-BAO — listening quietly, on behalf of Ashok VA and KIKU.<br>
+      These are suggestions only. You decide whether and how to respond.<br>
+      Capped at ${MAX_PER_CATEGORY} per category · Showing highest relevance first
+    </div>
+
+  </div>
   `;
 
   try {
     await resend.emails.send({
       from: "KON-BAO <onboarding@resend.dev>",
       to: REPORT_EMAIL,
-      subject: `KON-BAO: ${findings.length} conversations found · ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
+      subject: `KON-BAO: ${total} conversations · ${kikuCount} KIKU · ${laCount} Cricket · ${date}`,
       html
     });
     console.log("Report sent to", REPORT_EMAIL);
