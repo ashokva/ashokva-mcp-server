@@ -134,10 +134,13 @@ async function fetchSubreddit(subreddit) {
   try {
     const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=25`;
     const response = await fetch(url, {
-      headers: {
-        "User-Agent": "KON-BAO-agent/1.0 by ashokva (personal non-commercial monitoring tool)"
-      }
-    });
+  headers: {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache"
+  }
+});
 
     if (!response.ok) {
       console.log(`Could not fetch r/${subreddit}: ${response.status}`);
