@@ -9,6 +9,8 @@
     "konbao": "node konbao.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@clawstr/cli": "latest",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "node-fetch": "^3.0.0",
     "resend": "^3.0.0"
