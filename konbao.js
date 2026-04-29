@@ -5,7 +5,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const BSKY_IDENTIFIER = process.env.BSKY_IDENTIFIER;
 const BSKY_PASSWORD = process.env.BSKY_PASSWORD;
 
-const REPORT_EMAIL = "konbao369@gmail.com";
+const REPORT_EMAIL = "hello@ashokva.net";
 const AGENT_NAME = "KON-BAO";
 const MAX_PER_CATEGORY = 10;
 
@@ -371,7 +371,7 @@ async function sendReport(categories, total) {
 
   try {
     await resend.emails.send({
-      from: "KON-BAO <onboarding@resend.dev>",
+      from: "KON-BAO <hello@ashokva.net>",
       to: REPORT_EMAIL,
       subject: `KON-BAO: ${total} conversations · ${summaryItems.map(i => `${i.count} ${i.label}`).join(" · ")} · ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}`,
       html
