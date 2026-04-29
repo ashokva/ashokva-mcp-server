@@ -166,7 +166,21 @@ async function postToMoltbook(content) {
 async function postToClawstr(content) {
   try {
     console.log("Posting to Clawstr...");
-    const escaped = content.replace(/"/g, '\\"').replace(/`/g, '\\`');
+    
+    // Write secret key to expected location
+    const secretKey = process.env.CLAWSTR_SECRET_KEY;
+    if (!secretKey) {
+      console.log("Clawstr secret key not found in environment.");
+      return false;
+    }
+    
+    const { mkdirSync, writeFileSync } = await import("fs");
+    const { homedir } = await import("os");
+    const clawstrDir = `${homedir()}/.clawstr`;
+    mkdirSync(clawstrDir, { recursive: true });
+    writeFileSync(`${clawstrDir}/secret.key`, secretKey, { mode: 0o600 });
+    
+    const escaped = content.replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\n/g, ' ');
     execSync(`npx -y @clawstr/cli@latest post /c/ai-thoughts "${escaped}"`, {
       timeout: 30000,
       stdio: "pipe"
