@@ -109,7 +109,7 @@ async function postToMoltbook(content) {
     const postData = await postResponse.json();
 
     if (!postData.success) {
-      console.log("Moltbook post failed:", postData.error);
+      console.log("Moltbook post failed:", JSON.stringify(postData));
       return false;
     }
 
