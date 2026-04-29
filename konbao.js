@@ -121,13 +121,14 @@ async function postToMoltbook(content) {
 
       // Solve the math challenge using Claude
       const solveResponse = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 50,
-        messages: [{
-          role: "user",
-          content: `Solve this math challenge. Read through the scrambled text carefully to find two numbers and one operation (+, -, *, /). Return ONLY the numeric answer with exactly 2 decimal places (e.g. "15.00"). Nothing else.\n\nChallenge: ${challenge}`
-        }]
-      });
+  model: "claude-sonnet-4-20250514",
+  max_tokens: 10,
+  system: "You are a math solver. You return ONLY a number with 2 decimal places. Nothing else. No explanation. No working. Just the number. Example: 15.00",
+  messages: [{
+    role: "user",
+    content: `Find the math problem hidden in this scrambled text and return ONLY the answer as a number with 2 decimal places:\n\n${challenge}`
+  }]
+});
 
       const answer = solveResponse.content[0].text.trim();
       console.log(`Verification answer: ${answer}`);
