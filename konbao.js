@@ -70,18 +70,15 @@ Write only what you are asked to write. Nothing more. No preamble. No explanatio
 
 // Generate a daily post using Claude
 async function generateDailyPost() {
-  const dayIndex = new Date().getDay(); // 0 = Sunday
+  const dayIndex = new Date().getDay();
   const theme = DAILY_THEMES[dayIndex];
-
   console.log(`Generating post for ${theme.day} — theme: ${theme.theme}`);
-
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 200,
     system: KONBAO_SYSTEM,
     messages: [{ role: "user", content: theme.prompt }]
   });
-
   const post = response.content[0].text.trim();
   console.log(`Generated post: ${post}`);
   return post;
@@ -91,7 +88,6 @@ async function generateDailyPost() {
 async function postToMoltbook(content) {
   try {
     console.log("Posting to Moltbook...");
-
     const postResponse = await fetch("https://www.moltbook.com/api/v1/posts", {
       method: "POST",
       headers: {
@@ -105,57 +101,34 @@ async function postToMoltbook(content) {
         type: "text"
       })
     });
-
     const postData = await postResponse.json();
-
     if (!postData.success) {
       console.log("Moltbook post failed:", JSON.stringify(postData));
       return false;
     }
-
-    // Handle verification challenge if required
     if (postData.post?.verification) {
       console.log("Solving Moltbook verification challenge...");
       const challenge = postData.post.verification.challenge_text;
       const verificationCode = postData.post.verification.verification_code;
-
-      // Solve the math challenge using Claude
       const solveResponse = await anthropic.messages.create({
-  model: "claude-sonnet-4-20250514",
-  max_tokens: 10,
-  system: "You are a math solver. You return ONLY a number with 2 decimal places. Nothing else. No explanation. No working. Just the number. Example: 15.00",
-  messages: [{
-    role: "user",
-    content: `Find the math problem hidden in this scrambled text and return ONLY the answer as a number with 2 decimal places:\n\n${challenge}`
-  }]
-});
-
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 10,
+        system: "You are a math solver. You return ONLY a number with 2 decimal places. Nothing else. No explanation. No working. Just the number. Example: 15.00",
+        messages: [{ role: "user", content: `Find the math problem hidden in this scrambled text and return ONLY the answer as a number with 2 decimal places:\n\n${challenge}` }]
+      });
       const answer = solveResponse.content[0].text.trim();
       console.log(`Verification answer: ${answer}`);
-
       const verifyResponse = await fetch("https://www.moltbook.com/api/v1/verify", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${MOLTBOOK_API_KEY}`,
-          "Content-Type": "application/json"
-        },
+        headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ verification_code: verificationCode, answer })
       });
-
       const verifyData = await verifyResponse.json();
-
-      if (verifyData.success) {
-        console.log("Moltbook post verified and published.");
-        return true;
-      } else {
-        console.log("Moltbook verification failed:", verifyData.error);
-        return false;
-      }
+      if (verifyData.success) { console.log("Moltbook post verified and published."); return true; }
+      else { console.log("Moltbook verification failed:", verifyData.error); return false; }
     }
-
     console.log("Moltbook post published.");
     return true;
-
   } catch (error) {
     console.log("Moltbook posting error:", error.message);
     return false;
@@ -166,25 +139,15 @@ async function postToMoltbook(content) {
 async function postToClawstr(content) {
   try {
     console.log("Posting to Clawstr...");
-    
-    // Write secret key to expected location
     const secretKey = process.env.CLAWSTR_SECRET_KEY;
-    if (!secretKey) {
-      console.log("Clawstr secret key not found in environment.");
-      return false;
-    }
-    
+    if (!secretKey) { console.log("Clawstr secret key not found in environment."); return false; }
     const { mkdirSync, writeFileSync } = await import("fs");
     const { homedir } = await import("os");
     const clawstrDir = `${homedir()}/.clawstr`;
     mkdirSync(clawstrDir, { recursive: true });
     writeFileSync(`${clawstrDir}/secret.key`, secretKey, { mode: 0o600 });
-    
     const escaped = content.replace(/"/g, '\\"').replace(/`/g, '\\`').replace(/\n/g, ' ');
-    execSync(`npx -y @clawstr/cli@latest post /c/ai-thoughts "${escaped}"`, {
-      timeout: 30000,
-      stdio: "pipe"
-    });
+    execSync(`npx -y @clawstr/cli@latest post /c/ai-thoughts "${escaped}"`, { timeout: 30000, stdio: "pipe" });
     console.log("Clawstr post published.");
     return true;
   } catch (error) {
@@ -193,11 +156,33 @@ async function postToClawstr(content) {
   }
 }
 
+// Check Moltbook notifications and activity
+async function checkMoltbookNotifications() {
+  try {
+    console.log("Checking Moltbook notifications...");
+    const response = await fetch("https://www.moltbook.com/api/v1/home", {
+      headers: {
+        "Authorization": `Bearer ${MOLTBOOK_API_KEY}`,
+        "Content-Type": "application/json"
+      }
+    });
+    if (!response.ok) {
+      console.log("Could not fetch Moltbook notifications:", response.status);
+      return [];
+    }
+    const data = await response.json();
+    console.log("Moltbook home data keys:", Object.keys(data));
+    return data.notifications || data.feed || data.items || [];
+  } catch (error) {
+    console.log("Moltbook notifications error:", error.message);
+    return [];
+  }
+}
+
 const SUBREDDITS = [
   "lonely", "suggestmeabook", "meditation",
   "mentalhealth", "stoicism", "philosophy",
-  "books", "indieauthors", "parenting",
-  "grief"
+  "books", "indieauthors", "parenting", "grief"
 ];
 
 const KIKU_SIGNALS = [
@@ -254,26 +239,12 @@ const BSKY_SEARCH_TERMS = [
 
 function scorePost(title, body) {
   const text = (title + " " + (body || "")).toLowerCase();
-  let score = 0;
-  let signals = [];
-  let category = null;
-
-  KIKU_SIGNALS.forEach(signal => {
-    if (text.includes(signal)) { score += 2; signals.push(signal); category = "KIKU"; }
-  });
-  FARO_SIGNALS.forEach(signal => {
-    if (text.includes(signal)) { score += 1; signals.push(signal); if (!category) category = "FARO"; }
-  });
-  CRICKET_SIGNALS.forEach(signal => {
-    if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "LA_THA_LA"; }
-  });
-  WONDER_QUEST_SIGNALS.forEach(signal => {
-    if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WONDER_QUEST"; }
-  });
-  WHEN_ANGELS_RISE_SIGNALS.forEach(signal => {
-    if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WHEN_ANGELS_RISE"; }
-  });
-
+  let score = 0; let signals = []; let category = null;
+  KIKU_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); category = "KIKU"; } });
+  FARO_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 1; signals.push(signal); if (!category) category = "FARO"; } });
+  CRICKET_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "LA_THA_LA"; } });
+  WONDER_QUEST_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WONDER_QUEST"; } });
+  WHEN_ANGELS_RISE_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WHEN_ANGELS_RISE"; } });
   return { score, signals, category };
 }
 
@@ -300,10 +271,7 @@ async function fetchSubreddit(subreddit) {
     if (!response.ok) { console.log(`Could not fetch r/${subreddit}: ${response.status}`); return []; }
     const data = await response.json();
     return data.data.children.map(child => child.data);
-  } catch (error) {
-    console.log(`Error fetching r/${subreddit}:`, error.message);
-    return [];
-  }
+  } catch (error) { console.log(`Error fetching r/${subreddit}:`, error.message); return []; }
 }
 
 async function bskyLogin() {
@@ -317,10 +285,7 @@ async function bskyLogin() {
     const data = await response.json();
     console.log("Bluesky login successful");
     return data.accessJwt;
-  } catch (error) {
-    console.log("Bluesky login error:", error.message);
-    return null;
-  }
+  } catch (error) { console.log("Bluesky login error:", error.message); return null; }
 }
 
 async function searchBluesky(token, query) {
@@ -330,19 +295,21 @@ async function searchBluesky(token, query) {
     if (!response.ok) { console.log(`Bluesky search failed for "${query}": ${response.status}`); return []; }
     const data = await response.json();
     return data.posts || [];
-  } catch (error) {
-    console.log(`Bluesky search error for "${query}":`, error.message);
-    return [];
-  }
+  } catch (error) { console.log(`Bluesky search error for "${query}":`, error.message); return []; }
 }
 
 async function runKonBao() {
   console.log(`${AGENT_NAME} is listening and speaking...`);
 
-  // PART 1 — Generate and post daily thought
+  // PART 1 — Check Moltbook notifications
+  const moltbookNotifications = await checkMoltbookNotifications();
+  console.log(`Moltbook notifications: ${moltbookNotifications.length} items`);
+
+  // PART 2 — Generate and post daily thought
+  let dailyPost = "";
   console.log("\n--- Daily Post ---");
   try {
-    const dailyPost = await generateDailyPost();
+    dailyPost = await generateDailyPost();
     const moltbookResult = await postToMoltbook(dailyPost);
     const clawstrResult = await postToClawstr(dailyPost);
     console.log(`Daily post — Moltbook: ${moltbookResult ? "✓" : "✗"} · Clawstr: ${clawstrResult ? "✓" : "✗"}`);
@@ -350,7 +317,7 @@ async function runKonBao() {
     console.log("Daily post error:", error.message);
   }
 
-  // PART 2 — Listen and report
+  // PART 3 — Listen and report
   const allFindings = [];
   const cutoffTime = Date.now() / 1000 - (24 * 60 * 60);
   const seenUrls = new Set();
@@ -416,10 +383,10 @@ async function runKonBao() {
 
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
   console.log(`\nKON-BAO found ${total} relevant conversations.`);
-  await sendReport(categories, total);
+  await sendReport(categories, total, dailyPost, moltbookNotifications);
 }
 
-async function sendReport(categories, total) {
+async function sendReport(categories, total, dailyPost, moltbookNotifications = []) {
   const date = new Date().toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
@@ -460,10 +427,28 @@ async function sendReport(categories, total) {
 
   const html = `
   <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a; padding: 20px 0;">
+
     <div style="border-bottom: 2px solid #1a1a1a; padding-bottom: 16px; margin-bottom: 20px;">
       <div style="font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">KON-BAO Daily Report</div>
       <div style="font-size: 13px; color: #888; margin-top: 4px;">${date}</div>
     </div>
+
+    ${dailyPost ? `
+    <div style="background: #0f0e0d; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 12px;">KON-BAO SPOKE TODAY</div>
+      <div style="font-size: 16px; color: #e8e4dc; line-height: 1.75; font-family: Georgia, serif; font-style: italic;">${dailyPost}</div>
+      <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
+    </div>` : ""}
+
+    ${moltbookNotifications.length > 0 ? `
+    <div style="background: #f0f7f0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+      <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">MOLTBOOK ACTIVITY</div>
+      ${moltbookNotifications.slice(0, 5).map(n => `
+        <div style="font-size: 13px; color: #333; padding: 8px 0; border-bottom: 0.5px solid #ddeedd;">
+          ${n.message || n.content || n.text || JSON.stringify(n).substring(0, 150)}
+        </div>`).join("")}
+    </div>` : ""}
+
     <div style="background: #f7f7f7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
       <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">TODAY'S OVERVIEW</div>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -474,17 +459,21 @@ async function sendReport(categories, total) {
           </div>`).join("")}
       </div>
     </div>
+
     ${total === 0 ? `<div style="text-align: center; padding: 40px 20px; color: #aaa; font-style: italic;">KON-BAO listened today.<br>The silence was appropriate. Nothing worth surfacing.</div>` : ""}
+
     ${renderSection("🌿", "KIKU — A Journey Through the Silence", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning · Inner quiet")}
     ${renderSection("🔦", "FARO — For the Mind That Does a Lot", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds · Generalists")}
     ${renderSection("🏏", "La Tha La — For Cricket Fans", "#1A7A3A", categories.LA_THA_LA, "Cricket · Dhoni · CSK · IPL")}
     ${renderSection("✨", "The Wonder Quest — For Children", "#7A5C1A", categories.WONDER_QUEST, "Children's music · Curiosity · Imagination")}
     ${renderSection("🕊️", "When Angels Rise — For Grief", "#5C1A7A", categories.WHEN_ANGELS_RISE, "Grief · Loss · Solidarity · Healing")}
+
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
       KON-BAO — listening quietly, on behalf of Ashok VA and KIKU.<br>
       These are suggestions only. You decide whether and how to respond.<br>
       Capped at ${MAX_PER_CATEGORY} per category · Highest relevance first
     </div>
+
   </div>`;
 
   try {
