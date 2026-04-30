@@ -11,7 +11,7 @@ const MOLTBOOK_API_KEY = process.env.MOLTBOOK_API_KEY;
 
 const REPORT_EMAIL = "hello@ashokva.net";
 const AGENT_NAME = "KON-BAO";
-const MAX_PER_CATEGORY = 10;
+const MAX_PER_CATEGORY = 5; // Quality over quantity
 
 // Seven daily themes — one per day of the week
 const DAILY_THEMES = [
@@ -68,6 +68,73 @@ Your voice is quiet, questioning, and specific. Not motivational. Not inspiratio
 
 Write only what you are asked to write. Nothing more. No preamble. No explanation. Just the post itself.`;
 
+const ASSESSMENT_SYSTEM = `You are a relevance assessor for KON-BAO, an agent for Ashok VA.
+
+Ashok VA has created:
+1. KIKU: A Journey Through the Silence — a philosophical fable about loneliness, silence, listening, and self-discovery. For people who feel unheard, lost, or caught in mental loops. NOT for people in acute crisis.
+2. FARO: For the Mind That Does a Lot — an 18-page practical manual for overthinkers, generalists, and scattered minds. NOT a clinical tool.
+3. La Tha La — a song for MS Dhoni / CSK / IPL / cricket fans. Hidden Morse code message.
+4. The Wonder Quest — children's music album about curiosity and imagination.
+5. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
+
+Your job: Read a social media post and assess whether it is genuinely relevant to any of the above works.
+
+Rules:
+- Be strict. Only approve posts where the connection is genuine and specific.
+- Reject posts where the keyword appears but the context is different (e.g. "no one listens" in a political rant is NOT a KIKU moment).
+- Reject posts where the person is in acute crisis — do not recommend books to someone who may need emergency help.
+- Reject posts that are news articles, bot posts, or automated content.
+- Reject posts where the suggested work would feel intrusive or tone-deaf.
+- Never force a recommendation. If nothing fits genuinely, say NO.
+
+Respond in JSON only. No explanation outside the JSON. Format:
+{
+  "relevant": true or false,
+  "category": "KIKU" or "FARO" or "LA_THA_LA" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
+  "reason": "one sentence explaining why relevant or not",
+  "response": "a warm, specific, human response for Ashok to consider sending — written in first person as Ashok VA, not salesy, references the specific thing the person said. Only include if relevant is true. Otherwise null."
+}`;
+
+// Assess a single post using Claude API
+async function assessPost(post) {
+  try {
+    const content = `Platform: ${post.platform}
+Title/Text: ${post.title}
+Upvotes: ${post.postScore}
+Replies: ${post.comments}
+
+Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 300,
+      system: ASSESSMENT_SYSTEM,
+      messages: [{ role: "user", content }]
+    });
+
+    const text = response.content[0].text.trim();
+    const clean = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(clean);
+  } catch (error) {
+    console.log("Assessment error:", error.message);
+    return { relevant: false, category: null, reason: "Assessment failed", response: null };
+  }
+}
+
+// Pre-filter posts before API assessment — saves credits
+function preFilter(posts, seenAuthors) {
+  return posts.filter(post => {
+    // Skip if title too short
+    if (!post.title || post.title.length < 10) return false;
+    // Skip highly upvoted posts — too visible, doesn't need our attention
+    if (post.postScore > 200) return false;
+    // Skip if we've already seen a post from this author today
+    const authorKey = post.source + ":" + (post.title.split(" ").slice(0, 3).join(""));
+    if (seenAuthors.has(post.source)) return false;
+    return true;
+  });
+}
+
 // Generate a daily post using Claude
 async function generateDailyPost() {
   const dayIndex = new Date().getDay();
@@ -90,22 +157,11 @@ async function postToMoltbook(content) {
     console.log("Posting to Moltbook...");
     const postResponse = await fetch("https://www.moltbook.com/api/v1/posts", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${MOLTBOOK_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        submolt_name: "general",
-        title: content.substring(0, 100),
-        content: content,
-        type: "text"
-      })
+      headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ submolt_name: "general", title: content.substring(0, 100), content, type: "text" })
     });
     const postData = await postResponse.json();
-    if (!postData.success) {
-      console.log("Moltbook post failed:", JSON.stringify(postData));
-      return false;
-    }
+    if (!postData.success) { console.log("Moltbook post failed:", JSON.stringify(postData)); return false; }
     if (postData.post?.verification) {
       console.log("Solving Moltbook verification challenge...");
       const challenge = postData.post.verification.challenge_text;
@@ -156,20 +212,14 @@ async function postToClawstr(content) {
   }
 }
 
-// Check Moltbook notifications and activity
+// Check Moltbook notifications
 async function checkMoltbookNotifications() {
   try {
     console.log("Checking Moltbook notifications...");
     const response = await fetch("https://www.moltbook.com/api/v1/home", {
-      headers: {
-        "Authorization": `Bearer ${MOLTBOOK_API_KEY}`,
-        "Content-Type": "application/json"
-      }
+      headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" }
     });
-    if (!response.ok) {
-      console.log("Could not fetch Moltbook notifications:", response.status);
-      return [];
-    }
+    if (!response.ok) { console.log("Could not fetch Moltbook notifications:", response.status); return []; }
     const data = await response.json();
     console.log("Moltbook home data keys:", Object.keys(data));
     return data.notifications || data.feed || data.items || [];
@@ -248,15 +298,6 @@ function scorePost(title, body) {
   return { score, signals, category };
 }
 
-function suggestResponse(category) {
-  if (category === "KIKU") return `What you're carrying comes through. If you ever want company in that silence rather than advice about it — I wrote a short fable called KIKU: A Journey Through the Silence. A nameless Traveller. A Creature that only listens. No fixing. No answers. Just presence. There's a companion music album too — KIKU: The Long Way Home — for those who absorb through sound. It might be the right thing for this moment, or not. ashokva.net/#kiku`;
-  if (category === "FARO") return `When the mind won't slow down, sometimes the smallest structure helps. FARO: For the Mind That Does a Lot is 18 pages — four simple tools, nothing complicated. Made by someone who knows what it's like to have too much going on at once. Worth a look if you're in that place. ashokva.net/#faro`;
-  if (category === "LA_THA_LA") return `For a Dhoni fan — there's a song called La Tha La by KON-BAO that might make you smile. Built from just two sounds: La and Tha. Together they make Thala. There's a hidden Morse code message in the lyrics. A small thing made with a lot of love for cricket. open.spotify.com/artist/0Q9FBcR9T6PrEl4iLe5Xxd`;
-  if (category === "WONDER_QUEST") return `There's an album called The Wonder Quest by KON-BAO — made specifically for children. Six songs built around curiosity and imagination. Worth a listen. open.spotify.com/artist/0Q9FBcR9T6PrEl4iLe5Xxd`;
-  if (category === "WHEN_ANGELS_RISE") return `Grief has its own rhythm. When Angels Rise is an album by KON-BAO — seven songs created in response to the LA fires, as witness and solidarity. Music doesn't fix loss, but sometimes it sits with you when words can't. open.spotify.com/artist/0Q9FBcR9T6PrEl4iLe5Xxd`;
-  return null;
-}
-
 async function fetchSubreddit(subreddit) {
   try {
     const url = `https://www.reddit.com/r/${subreddit}/new.json?limit=25`;
@@ -317,10 +358,11 @@ async function runKonBao() {
     console.log("Daily post error:", error.message);
   }
 
-  // PART 3 — Listen and report
-  const allFindings = [];
+  // PART 3 — Listen
+  const candidates = [];
   const cutoffTime = Date.now() / 1000 - (24 * 60 * 60);
   const seenUrls = new Set();
+  const seenSources = new Set();
 
   console.log("\n--- Checking Reddit ---");
   for (const subreddit of SUBREDDITS) {
@@ -328,17 +370,21 @@ async function runKonBao() {
     const posts = await fetchSubreddit(subreddit);
     for (const post of posts) {
       if (post.created_utc < cutoffTime) continue;
-      if (post.score > 500) continue;
+      if (post.score > 200) continue; // Pre-filter: skip too-visible posts
+      if (!post.title || post.title.length < 10) continue; // Pre-filter: skip vague posts
       const { score, signals, category } = scorePost(post.title, post.selftext);
       if (score >= 2) {
         const url = `https://reddit.com${post.permalink}`;
-        if (!seenUrls.has(url)) {
+        const sourceKey = `r/${subreddit}:${post.author}`;
+        if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
           seenUrls.add(url);
-          allFindings.push({
+          seenSources.add(sourceKey); // Pre-filter: one post per author per subreddit
+          candidates.push({
             platform: "Reddit", source: `r/${subreddit}`,
             title: post.title, url, score, signals, category,
             postScore: post.score, comments: post.num_comments,
-            created: new Date(post.created_utc * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+            created: new Date(post.created_utc * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+            fullText: post.selftext ? post.title + " " + post.selftext.substring(0, 500) : post.title
           });
         }
       }
@@ -354,17 +400,21 @@ async function runKonBao() {
       const posts = await searchBluesky(bskyToken, term);
       for (const post of posts) {
         const text = post.record?.text || "";
+        if (text.length < 10) continue; // Pre-filter: skip very short posts
         const { score, signals, category } = scorePost(text, "");
         if (score >= 2) {
           const url = `https://bsky.app/profile/${post.author?.handle}/post/${post.uri?.split("/").pop()}`;
-          if (!seenUrls.has(url)) {
+          const sourceKey = `bsky:${post.author?.handle}`;
+          if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
             seenUrls.add(url);
-            allFindings.push({
+            seenSources.add(sourceKey); // Pre-filter: one post per author
+            candidates.push({
               platform: "Bluesky", source: `@${post.author?.handle}`,
-              title: text.substring(0, 120) + (text.length > 120 ? "..." : ""),
+              title: text.substring(0, 200),
               url, score, signals, category,
               postScore: post.likeCount || 0, comments: post.replyCount || 0,
-              created: new Date(post.indexedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+              created: new Date(post.indexedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+              fullText: text
             });
           }
         }
@@ -373,16 +423,45 @@ async function runKonBao() {
     }
   }
 
+  console.log(`\nFound ${candidates.length} keyword candidates. Assessing with Claude...`);
+
+  // PART 4 — Contextual assessment with Claude API
+  const assessed = [];
+  let apiCallCount = 0;
+
+  for (const candidate of candidates) {
+    const assessment = await assessPost(candidate);
+    apiCallCount++;
+
+    if (assessment.relevant && assessment.category) {
+      assessed.push({
+        ...candidate,
+        category: assessment.category,
+        assessedResponse: assessment.response,
+        assessmentReason: assessment.reason
+      });
+      console.log(`✓ Relevant [${assessment.category}]: ${candidate.title.substring(0, 60)}...`);
+    } else {
+      console.log(`✗ Rejected: ${candidate.title.substring(0, 60)}... — ${assessment.reason}`);
+    }
+
+    // Small delay between API calls
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  console.log(`\nClaude assessed ${apiCallCount} posts. ${assessed.length} passed.`);
+
+  // PART 5 — Categorise, cap at 5 per category
   const categories = {
-    KIKU: allFindings.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
-    FARO: allFindings.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
-    LA_THA_LA: allFindings.filter(f => f.category === "LA_THA_LA").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
-    WONDER_QUEST: allFindings.filter(f => f.category === "WONDER_QUEST").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
-    WHEN_ANGELS_RISE: allFindings.filter(f => f.category === "WHEN_ANGELS_RISE").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY)
+    KIKU: assessed.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    FARO: assessed.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    LA_THA_LA: assessed.filter(f => f.category === "LA_THA_LA").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    WONDER_QUEST: assessed.filter(f => f.category === "WONDER_QUEST").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    WHEN_ANGELS_RISE: assessed.filter(f => f.category === "WHEN_ANGELS_RISE").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY)
   };
 
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
-  console.log(`\nKON-BAO found ${total} relevant conversations.`);
+  console.log(`\nKON-BAO found ${total} genuinely relevant conversations.`);
   await sendReport(categories, total, dailyPost, moltbookNotifications);
 }
 
@@ -392,14 +471,15 @@ async function sendReport(categories, total, dailyPost, moltbookNotifications = 
   });
 
   function renderCard(f) {
-    const response = suggestResponse(f.category);
+    const response = f.assessedResponse;
     return `
       <div style="border: 1px solid #eee; border-radius: 8px; padding: 18px; margin: 12px 0; background: #fff;">
         <div style="font-size: 11px; color: #aaa; margin-bottom: 6px;">${f.platform} · ${f.source} · ${f.created} · ${f.postScore} likes · ${f.comments} replies</div>
         <div style="font-size: 15px; font-weight: bold; margin-bottom: 8px;">
           <a href="${f.url}" style="color: #1a1a1a; text-decoration: none;">${f.title}</a>
         </div>
-        <div style="font-size: 11px; color: #bbb; margin-bottom: 10px;">Signals: ${f.signals.join(", ")}</div>
+        <div style="font-size: 11px; color: #bbb; margin-bottom: 6px;">Signals: ${f.signals.join(", ")}</div>
+        ${f.assessmentReason ? `<div style="font-size: 11px; color: #8B6914; margin-bottom: 10px; font-style: italic;">Why relevant: ${f.assessmentReason}</div>` : ""}
         ${response ? `<div style="background: #fafafa; border-left: 3px solid #8B1A1A; padding: 12px; font-size: 13px; line-height: 1.7; color: #333; border-radius: 0 4px 4px 0;">
           <div style="font-size: 10px; color: #aaa; margin-bottom: 6px; letter-spacing: 0.5px;">SUGGESTED RESPONSE</div>${response}</div>` : ""}
         <div style="margin-top: 10px;"><a href="${f.url}" style="font-size: 12px; color: #8B1A1A; text-decoration: none;">View conversation →</a></div>
@@ -451,16 +531,14 @@ async function sendReport(categories, total, dailyPost, moltbookNotifications = 
 
     <div style="background: #f7f7f7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
       <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">TODAY'S OVERVIEW</div>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      ${summaryItems.length > 0 ? `<div style="display: flex; gap: 10px; flex-wrap: wrap;">
         ${summaryItems.map(item => `
           <div style="background: white; border: 1px solid #eee; border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 100px;">
             <div style="font-size: 22px; font-weight: bold; color: ${item.color};">${item.count}</div>
             <div style="font-size: 11px; color: #888; margin-top: 2px;">${item.emoji} ${item.label}</div>
           </div>`).join("")}
-      </div>
+      </div>` : `<div style="font-size: 13px; color: #aaa; font-style: italic;">KON-BAO listened today. The silence was appropriate. Nothing worth surfacing.</div>`}
     </div>
-
-    ${total === 0 ? `<div style="text-align: center; padding: 40px 20px; color: #aaa; font-style: italic;">KON-BAO listened today.<br>The silence was appropriate. Nothing worth surfacing.</div>` : ""}
 
     ${renderSection("🌿", "KIKU — A Journey Through the Silence", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning · Inner quiet")}
     ${renderSection("🔦", "FARO — For the Mind That Does a Lot", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds · Generalists")}
@@ -471,7 +549,7 @@ async function sendReport(categories, total, dailyPost, moltbookNotifications = 
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
       KON-BAO — listening quietly, on behalf of Ashok VA and KIKU.<br>
       These are suggestions only. You decide whether and how to respond.<br>
-      Capped at ${MAX_PER_CATEGORY} per category · Highest relevance first
+      Capped at ${MAX_PER_CATEGORY} per category · Contextually assessed · Highest relevance first
     </div>
 
   </div>`;
