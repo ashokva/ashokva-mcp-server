@@ -92,7 +92,7 @@ Respond in JSON only. No explanation outside the JSON. Format:
   "relevant": true or false,
   "category": "KIKU" or "FARO" or "LA_THA_LA" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
   "reason": "one sentence explaining why relevant or not",
-  "response": "a warm, specific, human response for Ashok to consider sending — written in first person as Ashok VA, not salesy, references the specific thing the person said. Only include if relevant is true. Otherwise null."
+  "response": "a response written in first person as Ashok VA — a human who has felt similar things and made something out of that feeling. Structure: (1) acknowledge what this specific person said, warmly and specifically — show you actually read them; (2) briefly share something true about yourself and why you made this work — one or two sentences, honest not performative; (3) quietly mention what exists at ashokva.net as an invitation, not a pitch — no pressure, no demand; (4) close warmly. Never lead with the book or product. Never sound like a recommendation. Sound like one human recognising another. The decision belongs entirely to them."
 }`;
 
 // Assess a single post using Claude API
