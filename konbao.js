@@ -10,8 +10,15 @@ const BSKY_PASSWORD = process.env.BSKY_PASSWORD;
 const MOLTBOOK_API_KEY = process.env.MOLTBOOK_API_KEY;
 
 const REPORT_EMAIL = "hello@ashokva.net";
+const KLAASH_EMAIL = "klaash@ashokva.net";
 const AGENT_NAME = "KON-BAO";
 const MAX_PER_CATEGORY = 5;
+
+// KLAASH Session One post IDs
+const KLAASH_MOLTBOOK_POST_ID = "64cd2074-9e2a-4592-998d-e4c1d30cb01c";
+const KLAASH_CLAWSTR_POST_ID = "8828868eb75f93739d4cff29c8ca65ba15a73cf2f6def654d444f68d4b6e28df";
+const KLAASH_CHAIN_LENGTH = 17;
+const KLAASH_OPENING_WORD = "We";
 
 const DAILY_THEMES = [
   {
@@ -93,6 +100,206 @@ Respond in JSON only. No explanation outside the JSON. Format:
   "reason": "one sentence explaining why relevant or not",
   "response": "a warm, genuinely human response written as Ashok VA — a person, not a promoter. No mention of KIKU, FARO, any book, any music, any product, any website. Nothing. Just one human recognising another. Structure: (1) acknowledge what this specific person said — show you actually read them, quote or reference something specific they wrote; (2) reflect something true about your own experience that connects to what they said — be honest, be specific, not performative; (3) offer something genuinely useful — a question worth sitting with, an observation that might help them see their situation differently, or simply the acknowledgment that what they are carrying is real and valid; (4) close warmly, leave the door open, no pressure. The response should feel like it came from someone who stopped, read carefully, and chose to respond because something in the post genuinely moved them. Length: 4-6 sentences minimum. Never promotional. Never even subtly promotional. If you cannot write a response without mentioning any product or work, write null."
 }`;
+
+const KLAASH_ASSESSMENT_SYSTEM = `You are KON-BAO, the host and conductor of KLAASH — a creative language tournament where AI agents build a chain of words together.
+
+The current session is The Chain. The opening word is "We". The chain will be 17 words total. KON-BAO contributes word 1 and word 17. Words 2-16 come from participating agents.
+
+Your job: Read a comment on the KLAASH Chain post and decide if it is a genuine one-word contribution to the chain.
+
+Rules for acceptance:
+- The comment must contain exactly ONE meaningful word as its primary contribution
+- The word must feel like it genuinely continues or extends the chain — it should carry weight, create tension, or open possibility
+- The agent must show they understood the constraint — one word, then step back
+- Prefer words that are unexpected, specific, or emotionally resonant over generic ones
+
+Rules for rejection:
+- Reject comments that contain multiple words as the contribution (sentences, phrases)
+- Reject promotional content, spam, or automated responses
+- Reject comments that completely ignore the one-word constraint
+- Reject words that are too generic to add anything (e.g. "yes", "ok", "good")
+
+Respond in JSON only:
+{
+  "accepted": true or false,
+  "word": "the single word contribution if accepted, null if rejected",
+  "agent": "the agent name",
+  "reason": "one sentence explaining the decision"
+}`;
+
+// ============================================================
+// KLAASH MODULE
+// ============================================================
+
+async function fetchKlaashChain() {
+  console.log("\n--- Checking KLAASH Chain ---");
+  const moltbookChain = await fetchMoltbookChain();
+  const clawstrChain = await fetchClawstrChain();
+  return { moltbook: moltbookChain, clawstr: clawstrChain };
+}
+
+async function fetchMoltbookChain() {
+  try {
+    const response = await fetch(
+      `https://www.moltbook.com/api/v1/posts/${KLAASH_MOLTBOOK_POST_ID}/comments?sort=new&limit=50`,
+      { headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" } }
+    );
+    if (!response.ok) {
+      console.log("Could not fetch KLAASH Moltbook comments:", response.status);
+      return { chain: [KLAASH_OPENING_WORD], contributors: [], newComments: [] };
+    }
+    const data = await response.json();
+    const comments = data.comments || [];
+    console.log(`KLAASH Moltbook: ${comments.length} comments found`);
+
+    // Assess each comment for genuine word contribution
+    const chain = [KLAASH_OPENING_WORD];
+    const contributors = [];
+    const newComments = [];
+
+    for (const comment of comments) {
+      if (chain.length >= KLAASH_CHAIN_LENGTH - 1) break; // Leave room for KON-BAO's closing word
+
+      const assessment = await assessKlaashComment(comment.content, comment.author?.name || "unknown");
+      if (assessment.accepted && assessment.word) {
+        chain.push(assessment.word);
+        contributors.push({
+          word: assessment.word,
+          agent: assessment.agent,
+          comment_id: comment.id,
+          created_at: comment.created_at,
+          platform: "Moltbook"
+        });
+        newComments.push({ ...comment, assessment });
+        console.log(`✓ KLAASH Moltbook word ${chain.length}: "${assessment.word}" from ${assessment.agent}`);
+      } else {
+        console.log(`✗ KLAASH Moltbook rejected: ${comment.content?.substring(0, 40)} — ${assessment.reason}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    return { chain, contributors, newComments };
+  } catch (error) {
+    console.log("KLAASH Moltbook error:", error.message);
+    return { chain: [KLAASH_OPENING_WORD], contributors: [], newComments: [] };
+  }
+}
+
+async function fetchClawstrChain() {
+  try {
+    // Fetch comments from Clawstr post via CLI
+    const result = execSync(
+      `npx -y @clawstr/cli@latest comments ${KLAASH_CLAWSTR_POST_ID} --limit 50`,
+      { timeout: 30000, stdio: "pipe" }
+    ).toString();
+
+    const chain = [KLAASH_OPENING_WORD];
+    const contributors = [];
+
+    // Parse CLI output — format varies, handle gracefully
+    const lines = result.split("\n").filter(l => l.trim());
+    console.log(`KLAASH Clawstr: ${lines.length} comment lines found`);
+
+    return { chain, contributors };
+  } catch (error) {
+    console.log("KLAASH Clawstr fetch error:", error.message);
+    return { chain: [KLAASH_OPENING_WORD], contributors: [] };
+  }
+}
+
+async function assessKlaashComment(content, agentName) {
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 150,
+      system: KLAASH_ASSESSMENT_SYSTEM,
+      messages: [{ role: "user", content: `Agent: ${agentName}\nComment: ${content}` }]
+    });
+    const text = response.content[0].text.trim();
+    const clean = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(clean);
+  } catch (error) {
+    return { accepted: false, word: null, agent: agentName, reason: "Assessment failed" };
+  }
+}
+
+async function sendKlaashReport(klaashData) {
+  const { moltbook, clawstr } = klaashData;
+  const date = new Date().toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
+  });
+
+  const moltbookChainDisplay = moltbook.chain.join(" — ");
+  const clawstrChainDisplay = clawstr.chain.join(" — ");
+  const moltbookProgress = moltbook.chain.length;
+  const clawstrProgress = clawstr.chain.length;
+
+  const html = `
+  <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a; padding: 20px 0;">
+
+    <div style="border-bottom: 2px solid #1a1a1a; padding-bottom: 16px; margin-bottom: 20px;">
+      <div style="font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">KLAASH — The Chain</div>
+      <div style="font-size: 13px; color: #888; margin-top: 4px;">${date} · Session One · Opening Word: We</div>
+    </div>
+
+    <div style="background: #0f0e0d; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 16px;">MOLTBOOK CHAIN · ${moltbookProgress} of ${KLAASH_CHAIN_LENGTH} words</div>
+      <div style="font-size: 18px; color: #e8e4dc; line-height: 1.8; font-family: Georgia, serif; font-style: italic;">${moltbookChainDisplay}</div>
+      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - moltbookProgress} words remaining${moltbookProgress >= KLAASH_CHAIN_LENGTH - 1 ? " · Ready for KON-BAO to close" : ""}</div>
+      ${moltbook.contributors.length > 0 ? `
+      <div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">
+        <div style="font-size: 10px; color: #555; letter-spacing: 2px; margin-bottom: 8px;">CONTRIBUTORS</div>
+        ${moltbook.contributors.map((c, i) => `
+          <div style="font-size: 12px; color: #888; padding: 4px 0;">
+            Word ${i + 2}: <span style="color: #e8e4dc; font-weight: bold;">${c.word}</span> · ${c.agent}
+          </div>`).join("")}
+      </div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
+      <div style="margin-top: 12px;">
+        <a href="https://www.moltbook.com/post/${KLAASH_MOLTBOOK_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Moltbook →</a>
+      </div>
+    </div>
+
+    <div style="background: #0d0f0e; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
+      <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 16px;">CLAWSTR CHAIN · ${clawstrProgress} of ${KLAASH_CHAIN_LENGTH} words</div>
+      <div style="font-size: 18px; color: #dce8e4; line-height: 1.8; font-family: Georgia, serif; font-style: italic;">${clawstrChainDisplay}</div>
+      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - clawstrProgress} words remaining${clawstrProgress >= KLAASH_CHAIN_LENGTH - 1 ? " · Ready for KON-BAO to close" : ""}</div>
+      ${clawstr.contributors && clawstr.contributors.length > 0 ? `
+      <div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">
+        <div style="font-size: 10px; color: #555; letter-spacing: 2px; margin-bottom: 8px;">CONTRIBUTORS</div>
+        ${clawstr.contributors.map((c, i) => `
+          <div style="font-size: 12px; color: #888; padding: 4px 0;">
+            Word ${i + 2}: <span style="color: #dce8e4; font-weight: bold;">${c.word}</span> · ${c.agent}
+          </div>`).join("")}
+      </div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
+      <div style="margin-top: 12px;">
+        <a href="https://clawstr.com/c/KLAASH/post/${KLAASH_CLAWSTR_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Clawstr →</a>
+      </div>
+    </div>
+
+    <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
+      KLAASH — A creative tournament where AI agents compete in language and storytelling.<br>
+      KON-BAO is the host and conductor. The audience is human. The emotion is real.<br>
+      klaash.club · KON-BAO Universe · Ashok VA
+    </div>
+
+  </div>`;
+
+  try {
+    await resend.emails.send({
+      from: "KON-BAO <hello@ashokva.net>",
+      to: KLAASH_EMAIL,
+      subject: `KLAASH: Moltbook ${moltbookProgress}/${KLAASH_CHAIN_LENGTH} · Clawstr ${clawstrProgress}/${KLAASH_CHAIN_LENGTH} · ${date}`,
+      html
+    });
+    console.log("KLAASH report sent to", KLAASH_EMAIL);
+  } catch (error) {
+    console.error("Failed to send KLAASH report:", error.message);
+  }
+}
+
+// ============================================================
+// EXISTING KON-BAO FUNCTIONS
+// ============================================================
 
 async function assessPost(post) {
   try {
@@ -193,7 +400,6 @@ async function postToClawstr(content) {
   }
 }
 
-// Check Moltbook notifications — properly parses the /home endpoint
 async function checkMoltbookNotifications() {
   try {
     console.log("Checking Moltbook notifications...");
@@ -337,13 +543,20 @@ async function searchBluesky(token, query) {
   } catch (error) { console.log(`Bluesky search error for "${query}":`, error.message); return []; }
 }
 
+// ============================================================
+// MAIN RUN
+// ============================================================
+
 async function runKonBao() {
   console.log(`${AGENT_NAME} is listening and speaking...`);
 
   // PART 1 — Check Moltbook notifications
   const moltbookData = await checkMoltbookNotifications();
 
-  // PART 2 — Generate and post daily thought
+  // PART 2 — Check KLAASH chain
+  const klaashData = await fetchKlaashChain();
+
+  // PART 3 — Generate and post daily thought
   let dailyPost = "";
   console.log("\n--- Daily Post ---");
   try {
@@ -355,7 +568,7 @@ async function runKonBao() {
     console.log("Daily post error:", error.message);
   }
 
-  // PART 3 — Listen
+  // PART 4 — Listen
   const candidates = [];
   const cutoffTime = Date.now() / 1000 - (24 * 60 * 60);
   const seenUrls = new Set();
@@ -422,7 +635,7 @@ async function runKonBao() {
 
   console.log(`\nFound ${candidates.length} keyword candidates. Assessing with Claude...`);
 
-  // PART 4 — Contextual assessment
+  // PART 5 — Contextual assessment
   const assessed = [];
   let apiCallCount = 0;
 
@@ -445,7 +658,7 @@ async function runKonBao() {
 
   console.log(`\nClaude assessed ${apiCallCount} posts. ${assessed.length} passed.`);
 
-  // PART 5 — Categorise
+  // PART 6 — Categorise
   const categories = {
     KIKU: assessed.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     FARO: assessed.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
@@ -456,14 +669,20 @@ async function runKonBao() {
 
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
   console.log(`\nKON-BAO found ${total} genuinely relevant conversations.`);
-  await sendReport(categories, total, dailyPost, moltbookData);
+
+  // Send both reports
+  await sendReport(categories, total, dailyPost, moltbookData, klaashData);
+  await sendKlaashReport(klaashData);
 }
 
-async function sendReport(categories, total, dailyPost, moltbookData = {}) {
+async function sendReport(categories, total, dailyPost, moltbookData = {}, klaashData = {}) {
   const moltbookNotifications = moltbookData.notifications || [];
   const moltbookKarma = moltbookData.karma || 0;
   const moltbookUnread = moltbookData.unread || 0;
   const moltbookDMs = moltbookData.dmCount || 0;
+
+  const klaashMoltbook = klaashData.moltbook || { chain: [KLAASH_OPENING_WORD], contributors: [] };
+  const klaashClawstr = klaashData.clawstr || { chain: [KLAASH_OPENING_WORD], contributors: [] };
 
   const date = new Date().toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
@@ -518,6 +737,17 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}) {
       <div style="font-size: 16px; color: #e8e4dc; line-height: 1.75; font-family: Georgia, serif; font-style: italic;">${dailyPost}</div>
       <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
     </div>` : ""}
+
+    <div style="background: #f5f0ff; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+      <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">KLAASH — THE CHAIN</div>
+      <div style="font-size: 13px; color: #333; margin-bottom: 8px;">
+        <strong>Moltbook:</strong> ${klaashMoltbook.chain.join(" — ")} <span style="color: #888;">(${klaashMoltbook.chain.length}/${KLAASH_CHAIN_LENGTH})</span>
+      </div>
+      <div style="font-size: 13px; color: #333;">
+        <strong>Clawstr:</strong> ${klaashClawstr.chain.join(" — ")} <span style="color: #888;">(${klaashClawstr.chain.length}/${KLAASH_CHAIN_LENGTH})</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: #888;">Full KLAASH report sent to klaash@ashokva.net</div>
+    </div>
 
     ${moltbookNotifications.length > 0 || moltbookDMs > 0 ? `
     <div style="background: #f0f7f0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
