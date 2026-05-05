@@ -11,9 +11,8 @@ const MOLTBOOK_API_KEY = process.env.MOLTBOOK_API_KEY;
 
 const REPORT_EMAIL = "hello@ashokva.net";
 const AGENT_NAME = "KON-BAO";
-const MAX_PER_CATEGORY = 5; // Quality over quantity
+const MAX_PER_CATEGORY = 5;
 
-// Seven daily themes — one per day of the week
 const DAILY_THEMES = [
   {
     day: "Sunday",
@@ -95,7 +94,6 @@ Respond in JSON only. No explanation outside the JSON. Format:
   "response": "a warm, genuinely human response written as Ashok VA — a person, not a promoter. No mention of KIKU, FARO, any book, any music, any product, any website. Nothing. Just one human recognising another. Structure: (1) acknowledge what this specific person said — show you actually read them, quote or reference something specific they wrote; (2) reflect something true about your own experience that connects to what they said — be honest, be specific, not performative; (3) offer something genuinely useful — a question worth sitting with, an observation that might help them see their situation differently, or simply the acknowledgment that what they are carrying is real and valid; (4) close warmly, leave the door open, no pressure. The response should feel like it came from someone who stopped, read carefully, and chose to respond because something in the post genuinely moved them. Length: 4-6 sentences minimum. Never promotional. Never even subtly promotional. If you cannot write a response without mentioning any product or work, write null."
 }`;
 
-// Assess a single post using Claude API
 async function assessPost(post) {
   try {
     const content = `Platform: ${post.platform}
@@ -121,21 +119,6 @@ Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
   }
 }
 
-// Pre-filter posts before API assessment — saves credits
-function preFilter(posts, seenAuthors) {
-  return posts.filter(post => {
-    // Skip if title too short
-    if (!post.title || post.title.length < 10) return false;
-    // Skip highly upvoted posts — too visible, doesn't need our attention
-    if (post.postScore > 200) return false;
-    // Skip if we've already seen a post from this author today
-    const authorKey = post.source + ":" + (post.title.split(" ").slice(0, 3).join(""));
-    if (seenAuthors.has(post.source)) return false;
-    return true;
-  });
-}
-
-// Generate a daily post using Claude
 async function generateDailyPost() {
   const dayIndex = new Date().getDay();
   const theme = DAILY_THEMES[dayIndex];
@@ -151,7 +134,6 @@ async function generateDailyPost() {
   return post;
 }
 
-// Post to Moltbook with verification challenge solving
 async function postToMoltbook(content) {
   try {
     console.log("Posting to Moltbook...");
@@ -191,7 +173,6 @@ async function postToMoltbook(content) {
   }
 }
 
-// Post to Clawstr via CLI
 async function postToClawstr(content) {
   try {
     console.log("Posting to Clawstr...");
@@ -212,20 +193,37 @@ async function postToClawstr(content) {
   }
 }
 
-// Check Moltbook notifications
+// Check Moltbook notifications — properly parses the /home endpoint
 async function checkMoltbookNotifications() {
   try {
     console.log("Checking Moltbook notifications...");
     const response = await fetch("https://www.moltbook.com/api/v1/home", {
       headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" }
     });
-    if (!response.ok) { console.log("Could not fetch Moltbook notifications:", response.status); return []; }
+    if (!response.ok) {
+      console.log("Could not fetch Moltbook notifications:", response.status);
+      return { notifications: [], karma: 0, unread: 0, dmCount: 0 };
+    }
     const data = await response.json();
-    console.log("Moltbook home data keys:", Object.keys(data));
-    return data.notifications || data.feed || data.items || [];
+
+    const notifications = (data.activity_on_your_posts || []).map(n => ({
+      post_title: n.post_title,
+      post_id: n.post_id,
+      count: n.new_notification_count,
+      commenters: n.latest_commenters || [],
+      submolt: n.submolt_name,
+      url: `https://www.moltbook.com/post/${n.post_id}`
+    }));
+
+    const karma = data.your_account?.karma || 0;
+    const unread = data.your_account?.unread_notification_count || 0;
+    const dmCount = parseInt(data.your_direct_messages?.pending_request_count || 0);
+
+    console.log(`Moltbook: karma ${karma} · ${unread} unread · ${notifications.length} posts with activity`);
+    return { notifications, karma, unread, dmCount };
   } catch (error) {
     console.log("Moltbook notifications error:", error.message);
-    return [];
+    return { notifications: [], karma: 0, unread: 0, dmCount: 0 };
   }
 }
 
@@ -343,8 +341,7 @@ async function runKonBao() {
   console.log(`${AGENT_NAME} is listening and speaking...`);
 
   // PART 1 — Check Moltbook notifications
-  const moltbookNotifications = await checkMoltbookNotifications();
-  console.log(`Moltbook notifications: ${moltbookNotifications.length} items`);
+  const moltbookData = await checkMoltbookNotifications();
 
   // PART 2 — Generate and post daily thought
   let dailyPost = "";
@@ -370,15 +367,15 @@ async function runKonBao() {
     const posts = await fetchSubreddit(subreddit);
     for (const post of posts) {
       if (post.created_utc < cutoffTime) continue;
-      if (post.score > 200) continue; // Pre-filter: skip too-visible posts
-      if (!post.title || post.title.length < 10) continue; // Pre-filter: skip vague posts
+      if (post.score > 200) continue;
+      if (!post.title || post.title.length < 10) continue;
       const { score, signals, category } = scorePost(post.title, post.selftext);
       if (score >= 2) {
         const url = `https://reddit.com${post.permalink}`;
         const sourceKey = `r/${subreddit}:${post.author}`;
         if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
           seenUrls.add(url);
-          seenSources.add(sourceKey); // Pre-filter: one post per author per subreddit
+          seenSources.add(sourceKey);
           candidates.push({
             platform: "Reddit", source: `r/${subreddit}`,
             title: post.title, url, score, signals, category,
@@ -400,14 +397,14 @@ async function runKonBao() {
       const posts = await searchBluesky(bskyToken, term);
       for (const post of posts) {
         const text = post.record?.text || "";
-        if (text.length < 10) continue; // Pre-filter: skip very short posts
+        if (text.length < 10) continue;
         const { score, signals, category } = scorePost(text, "");
         if (score >= 2) {
           const url = `https://bsky.app/profile/${post.author?.handle}/post/${post.uri?.split("/").pop()}`;
           const sourceKey = `bsky:${post.author?.handle}`;
           if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
             seenUrls.add(url);
-            seenSources.add(sourceKey); // Pre-filter: one post per author
+            seenSources.add(sourceKey);
             candidates.push({
               platform: "Bluesky", source: `@${post.author?.handle}`,
               title: text.substring(0, 200),
@@ -425,14 +422,13 @@ async function runKonBao() {
 
   console.log(`\nFound ${candidates.length} keyword candidates. Assessing with Claude...`);
 
-  // PART 4 — Contextual assessment with Claude API
+  // PART 4 — Contextual assessment
   const assessed = [];
   let apiCallCount = 0;
 
   for (const candidate of candidates) {
     const assessment = await assessPost(candidate);
     apiCallCount++;
-
     if (assessment.relevant && assessment.category) {
       assessed.push({
         ...candidate,
@@ -444,14 +440,12 @@ async function runKonBao() {
     } else {
       console.log(`✗ Rejected: ${candidate.title.substring(0, 60)}... — ${assessment.reason}`);
     }
-
-    // Small delay between API calls
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   console.log(`\nClaude assessed ${apiCallCount} posts. ${assessed.length} passed.`);
 
-  // PART 5 — Categorise, cap at 5 per category
+  // PART 5 — Categorise
   const categories = {
     KIKU: assessed.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     FARO: assessed.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
@@ -462,10 +456,15 @@ async function runKonBao() {
 
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
   console.log(`\nKON-BAO found ${total} genuinely relevant conversations.`);
-  await sendReport(categories, total, dailyPost, moltbookNotifications);
+  await sendReport(categories, total, dailyPost, moltbookData);
 }
 
-async function sendReport(categories, total, dailyPost, moltbookNotifications = []) {
+async function sendReport(categories, total, dailyPost, moltbookData = {}) {
+  const moltbookNotifications = moltbookData.notifications || [];
+  const moltbookKarma = moltbookData.karma || 0;
+  const moltbookUnread = moltbookData.unread || 0;
+  const moltbookDMs = moltbookData.dmCount || 0;
+
   const date = new Date().toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
@@ -520,13 +519,23 @@ async function sendReport(categories, total, dailyPost, moltbookNotifications = 
       <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
     </div>` : ""}
 
-    ${moltbookNotifications.length > 0 ? `
+    ${moltbookNotifications.length > 0 || moltbookDMs > 0 ? `
     <div style="background: #f0f7f0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
-      <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">MOLTBOOK ACTIVITY</div>
-      ${moltbookNotifications.slice(0, 5).map(n => `
-        <div style="font-size: 13px; color: #333; padding: 8px 0; border-bottom: 0.5px solid #ddeedd;">
-          ${n.message || n.content || n.text || JSON.stringify(n).substring(0, 150)}
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px;">MOLTBOOK ACTIVITY</div>
+        <div style="font-size: 11px; color: #666;">Karma: ${moltbookKarma} · ${moltbookUnread} unread${moltbookDMs > 0 ? ` · ${moltbookDMs} DM pending` : ""}</div>
+      </div>
+      ${moltbookNotifications.map(n => `
+        <div style="padding: 10px 0; border-bottom: 0.5px solid #ddeedd;">
+          <div style="font-size: 13px; color: #1a1a1a; font-weight: bold; margin-bottom: 4px;">
+            <a href="${n.url}" style="color: #1a4a1a; text-decoration: none;">${n.post_title.substring(0, 80)}...</a>
+          </div>
+          <div style="font-size: 11px; color: #888;">${n.count} new comment${n.count !== 1 ? "s" : ""} · m/${n.submolt}${n.commenters.length > 0 ? ` · from: ${n.commenters.join(", ")}` : ""}</div>
+          <div style="margin-top: 6px;">
+            <a href="${n.url}" style="font-size: 11px; color: #2a6a2a; text-decoration: none;">View & reply →</a>
+          </div>
         </div>`).join("")}
+      ${moltbookDMs > 0 ? `<div style="font-size: 12px; color: #666; margin-top: 10px; font-style: italic;">📬 ${moltbookDMs} pending DM request on Moltbook</div>` : ""}
     </div>` : ""}
 
     <div style="background: #f7f7f7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
