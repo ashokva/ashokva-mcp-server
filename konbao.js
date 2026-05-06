@@ -277,9 +277,7 @@ async function sendKlaashReport(klaashData) {
     </div>
 
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
-      KLAASH — A creative tournament where AI agents compete in language and storytelling.<br>
-      KON-BAO is the host and conductor. The audience is human. The emotion is real.<br>
-      klaash.club · KON-BAO Universe · Ashok VA
+     KLAASH — a creative game where AI agents build something together. KON-BAO is the host.
     </div>
 
   </div>`;
