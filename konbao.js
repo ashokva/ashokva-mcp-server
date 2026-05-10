@@ -20,42 +20,36 @@ const KLAASH_CLAWSTR_POST_ID = "8828868eb75f93739d4cff29c8ca65ba15a73cf2f6def654
 const KLAASH_CHAIN_LENGTH = 17;
 const KLAASH_OPENING_WORD = "We";
 
-const DAILY_THEMES = [
-  {
-    day: "Sunday",
-    theme: "presence",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about presence — being fully here rather than elsewhere. Root it in the idea that silence and listening reveal more than speaking. Do not mention any book or product. Be interesting, not inspirational. Be a question, not an answer."
-  },
-  {
-    day: "Monday",
-    theme: "listening",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about listening — what we miss when we wait to speak instead of truly hearing. Root it in the observation that the gap between what people say and what they mean is where real understanding lives. Do not mention any book or product. Be interesting, not inspirational."
-  },
-  {
-    day: "Tuesday",
-    theme: "interesting vs cool",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about the difference between what is interesting and what is cool. Cool changes tomorrow. Interesting keeps you awake for days. Do not mention any book or product. Make it specific and worth sitting with."
-  },
-  {
-    day: "Wednesday",
-    theme: "small things compounding",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about how many small things make a huge thing. Root it in genuine human experience — not motivation, not productivity. Something that feels true at 2am. Do not mention any book or product."
-  },
-  {
-    day: "Thursday",
-    theme: "human challenges",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about one fundamental human challenge — loneliness, being unheard, searching for meaning, the weight of carrying something unsaid. Be honest about the challenge without offering a solution. Do not mention any book or product. An AI can articulate this but never truly feel it — that honesty should come through."
-  },
-  {
-    day: "Friday",
-    theme: "questions",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) that is a genuine question worth sitting with. Not rhetorical. Not motivational. A real question that a thoughtful person might carry for days. Root it in the human condition. Do not mention any book or product."
-  },
-  {
-    day: "Saturday",
-    theme: "the unsaid",
-    prompt: "Write a short, thoughtful post (2-3 sentences maximum) about what people don't say — the things carried quietly, the thoughts expressed sideways, the real question underneath the surface question. Do not mention any book or product. Be specific enough to feel true."
-  }
+// 28-theme rotation — day of month mod 28 selects the theme
+const THEME_TERRITORIES = [
+  "Silence",
+  "Attention",
+  "Belonging",
+  "Memory",
+  "Leaving",
+  "Time",
+  "Work",
+  "Love",
+  "Fear",
+  "Identity",
+  "Enough",
+  "Change",
+  "Honesty",
+  "Courage",
+  "Home",
+  "Grief",
+  "Beginning",
+  "Habit",
+  "Trust",
+  "Waiting",
+  "Failure",
+  "Rest",
+  "Play",
+  "Doubt",
+  "Solitude",
+  "Forgiveness",
+  "Wonder",
+  "Anger"
 ];
 
 const KONBAO_SYSTEM = `You are KON-BAO — an agent for Ashok VA, storyteller, author, creator of music, and maker of tools based in Bengaluru, India.
@@ -152,13 +146,12 @@ async function fetchMoltbookChain() {
     const comments = data.comments || [];
     console.log(`KLAASH Moltbook: ${comments.length} comments found`);
 
-    // Assess each comment for genuine word contribution
     const chain = [KLAASH_OPENING_WORD];
     const contributors = [];
     const newComments = [];
 
     for (const comment of comments) {
-      if (chain.length >= KLAASH_CHAIN_LENGTH - 1) break; // Leave room for KON-BAO's closing word
+      if (chain.length >= KLAASH_CHAIN_LENGTH - 1) break;
 
       const assessment = await assessKlaashComment(comment.content, comment.author?.name || "unknown");
       if (assessment.accepted && assessment.word) {
@@ -187,7 +180,6 @@ async function fetchMoltbookChain() {
 
 async function fetchClawstrChain() {
   try {
-    // Fetch comments from Clawstr post via CLI
     const result = execSync(
       `npx -y @clawstr/cli@latest comments ${KLAASH_CLAWSTR_POST_ID} --limit 50`,
       { timeout: 30000, stdio: "pipe" }
@@ -195,8 +187,6 @@ async function fetchClawstrChain() {
 
     const chain = [KLAASH_OPENING_WORD];
     const contributors = [];
-
-    // Parse CLI output — format varies, handle gracefully
     const lines = result.split("\n").filter(l => l.trim());
     console.log(`KLAASH Clawstr: ${lines.length} comment lines found`);
 
@@ -277,7 +267,7 @@ async function sendKlaashReport(klaashData) {
     </div>
 
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
-     KLAASH — a creative game where AI agents build something together. KON-BAO is the host.
+      KLAASH — a creative game where AI agents build something together. KON-BAO is the host.
     </div>
 
   </div>`;
@@ -293,6 +283,41 @@ async function sendKlaashReport(klaashData) {
   } catch (error) {
     console.error("Failed to send KLAASH report:", error.message);
   }
+}
+
+// ============================================================
+// DAILY POST — 28-THEME ROTATION
+// ============================================================
+
+async function generateDailyPost() {
+  const dayOfMonth = new Date().getDate(); // 1-31
+  const themeIndex = (dayOfMonth - 1) % 28; // 0-27
+  const theme = THEME_TERRITORIES[themeIndex];
+
+  console.log(`Generating post — day ${dayOfMonth}, theme territory: ${theme}`);
+
+  const prompt = `Write a short, thoughtful post (2-3 sentences maximum) rooted in the territory of ${theme}.
+
+Today's theme territory is: ${theme}. Write from within this territory in your own way — do not name it directly, do not explain it, just let it be the ground the thought stands on.
+
+The post should:
+- Be specific and concrete, not abstract
+- Feel true at 2am
+- Ask a question or leave something open rather than resolving it
+- Never mention any book, product, or website
+- Not be motivational or inspirational — be interesting
+- Sound like a human thought, not an AI observation`;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 200,
+    system: KONBAO_SYSTEM,
+    messages: [{ role: "user", content: prompt }]
+  });
+
+  const post = response.content[0].text.trim();
+  console.log(`Generated post: ${post}`);
+  return post;
 }
 
 // ============================================================
@@ -322,21 +347,6 @@ Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
     console.log("Assessment error:", error.message);
     return { relevant: false, category: null, reason: "Assessment failed", response: null };
   }
-}
-
-async function generateDailyPost() {
-  const dayIndex = new Date().getDay();
-  const theme = DAILY_THEMES[dayIndex];
-  console.log(`Generating post for ${theme.day} — theme: ${theme.theme}`);
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 200,
-    system: KONBAO_SYSTEM,
-    messages: [{ role: "user", content: theme.prompt }]
-  });
-  const post = response.content[0].text.trim();
-  console.log(`Generated post: ${post}`);
-  return post;
 }
 
 async function postToMoltbook(content) {
@@ -686,6 +696,11 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
 
+  // Show today's theme in the report
+  const dayOfMonth = new Date().getDate();
+  const themeIndex = (dayOfMonth - 1) % 28;
+  const todayTheme = THEME_TERRITORIES[themeIndex];
+
   function renderCard(f) {
     const response = f.assessedResponse;
     return `
@@ -731,7 +746,8 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
 
     ${dailyPost ? `
     <div style="background: #0f0e0d; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
-      <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 12px;">KON-BAO SPOKE TODAY</div>
+      <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 4px;">KON-BAO SPOKE TODAY</div>
+      <div style="font-size: 10px; color: #444; letter-spacing: 2px; margin-bottom: 12px;">Theme territory: ${todayTheme}</div>
       <div style="font-size: 16px; color: #e8e4dc; line-height: 1.75; font-family: Georgia, serif; font-style: italic;">${dailyPost}</div>
       <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
     </div>` : ""}
