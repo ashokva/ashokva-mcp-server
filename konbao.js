@@ -681,6 +681,17 @@ async function runKonBao() {
   // Send both reports
   await sendReport(categories, total, dailyPost, moltbookData, klaashData);
   await sendKlaashReport(klaashData);
+
+  // Mark all Moltbook notifications as read — keeps tomorrow's report clean
+  try {
+    await fetch("https://www.moltbook.com/api/v1/notifications/read-all", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${MOLTBOOK_API_KEY}`, "Content-Type": "application/json" }
+    });
+    console.log("Moltbook notifications marked as read.");
+  } catch (error) {
+    console.log("Could not mark notifications as read:", error.message);
+  }
 }
 
 async function sendReport(categories, total, dailyPost, moltbookData = {}, klaashData = {}) {
