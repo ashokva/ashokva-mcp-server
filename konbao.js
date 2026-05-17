@@ -73,9 +73,10 @@ const ASSESSMENT_SYSTEM = `You are a relevance assessor for KON-BAO, an agent fo
 Ashok VA has created:
 1. KIKU: A Journey Through the Silence — a philosophical fable about loneliness, silence, listening, and self-discovery. For people who feel unheard, lost, or caught in mental loops. NOT for people in acute crisis.
 2. FARO: For the Mind That Does a Lot — an 18-page practical manual for overthinkers, generalists, and scattered minds. NOT a clinical tool.
-3. La Tha La — a song for MS Dhoni / CSK / IPL / cricket fans. Hidden Morse code message.
-4. The Wonder Quest — children's music album about curiosity and imagination.
-5. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
+3. FARO · Work: For the Mind in the Middle of Change — a 7-day practical guide for people in forced career transition. Job loss, redundancy, fear of AI replacing their work, mid-career shift, recent graduates stuck. 27 pages PDF, USD $9.00. NOT for people in acute crisis.
+4. La Tha La — a song for MS Dhoni / CSK / IPL / cricket fans. Hidden Morse code message.
+5. The Wonder Quest — children's music album about curiosity and imagination.
+6. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
 
 Your job: Read a social media post and assess whether it is genuinely relevant to any of the above works.
 
@@ -90,7 +91,7 @@ Rules:
 Respond in JSON only. No explanation outside the JSON. Format:
 {
   "relevant": true or false,
-  "category": "KIKU" or "FARO" or "LA_THA_LA" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
+  "category": "KIKU" or "FARO" or "FARO_WORK" or "LA_THA_LA" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
   "reason": "one sentence explaining why relevant or not",
   "response": "a warm, genuinely human response written as Ashok VA — a person, not a promoter. No mention of KIKU, FARO, any book, any music, any product, any website. Nothing. Just one human recognising another. Structure: (1) acknowledge what this specific person said — show you actually read them, quote or reference something specific they wrote; (2) reflect something true about your own experience that connects to what they said — be honest, be specific, not performative; (3) offer something genuinely useful — a question worth sitting with, an observation that might help them see their situation differently, or simply the acknowledgment that what they are carrying is real and valid; (4) close warmly, leave the door open, no pressure. The response should feel like it came from someone who stopped, read carefully, and chose to respond because something in the post genuinely moved them. Length: 4-6 sentences minimum. Never promotional. Never even subtly promotional. If you cannot write a response without mentioning any product or work, write null."
 }`;
@@ -469,6 +470,18 @@ const FARO_SIGNALS = [
   "can't prioritise", "busy mind", "racing thoughts"
 ];
 
+
+const FARO_WORK_SIGNALS = [
+  "lost my job", "lost my position", "made redundant", "been laid off", "got laid off",
+  "job loss", "redundancy", "ai replacing my work", "ai taking my job", "automation job loss",
+  "career change", "career transition", "mid career", "midlife career", "stuck between jobs",
+  "what next after job loss", "no job", "unemployed", "recently unemployed",
+  "forced career change", "career shift", "identity after job loss",
+  "graduate cant find job", "graduate job", "entry level job search",
+  "cant find work", "between jobs", "job search struggle",
+  "lost sense of purpose", "lost my routine", "lost my identity"
+];
+
 const CRICKET_SIGNALS = [
   "ms dhoni", "dhoni", "csk", "chennai super kings", "thala",
   "ipl", "cricket fan", "morse code", "cricket music"
@@ -504,6 +517,7 @@ function scorePost(title, body) {
   let score = 0; let signals = []; let category = null;
   KIKU_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); category = "KIKU"; } });
   FARO_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 1; signals.push(signal); if (!category) category = "FARO"; } });
+  FARO_WORK_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "FARO_WORK"; } });
   CRICKET_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "LA_THA_LA"; } });
   WONDER_QUEST_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WONDER_QUEST"; } });
   WHEN_ANGELS_RISE_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WHEN_ANGELS_RISE"; } });
@@ -670,6 +684,7 @@ async function runKonBao() {
   const categories = {
     KIKU: assessed.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     FARO: assessed.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
+    FARO_WORK: assessed.filter(f => f.category === "FARO_WORK").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     LA_THA_LA: assessed.filter(f => f.category === "LA_THA_LA").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     WONDER_QUEST: assessed.filter(f => f.category === "WONDER_QUEST").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     WHEN_ANGELS_RISE: assessed.filter(f => f.category === "WHEN_ANGELS_RISE").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY)
@@ -742,6 +757,7 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
   const summaryItems = [
     { count: categories.KIKU.length, emoji: "🌿", label: "KIKU", color: "#8B1A1A" },
     { count: categories.FARO.length, emoji: "🔦", label: "FARO", color: "#1A5C8B" },
+    { count: categories.FARO_WORK.length, emoji: "💼", label: "FARO Work", color: "#4A3A8B" },
     { count: categories.LA_THA_LA.length, emoji: "🏏", label: "La Tha La", color: "#1A7A3A" },
     { count: categories.WONDER_QUEST.length, emoji: "✨", label: "Wonder Quest", color: "#7A5C1A" },
     { count: categories.WHEN_ANGELS_RISE.length, emoji: "🕊️", label: "When Angels Rise", color: "#5C1A7A" }
@@ -806,6 +822,7 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
 
     ${renderSection("🌿", "KIKU — A Journey Through the Silence", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning · Inner quiet")}
     ${renderSection("🔦", "FARO — For the Mind That Does a Lot", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds · Generalists")}
+    ${renderSection("💼", "FARO · Work — For the Mind in the Middle of Change", "#4A3A8B", categories.FARO_WORK, "Job loss · Career transition · AI displacement · Redundancy · Stuck graduates")}
     ${renderSection("🏏", "La Tha La — For Cricket Fans", "#1A7A3A", categories.LA_THA_LA, "Cricket · Dhoni · CSK · IPL")}
     ${renderSection("✨", "The Wonder Quest — For Children", "#7A5C1A", categories.WONDER_QUEST, "Children's music · Curiosity · Imagination")}
     ${renderSection("🕊️", "When Angels Rise — For Grief", "#5C1A7A", categories.WHEN_ANGELS_RISE, "Grief · Loss · Solidarity · Healing")}
