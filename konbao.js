@@ -697,13 +697,16 @@ async function runKonBao() {
 
   console.log("\n--- Checking HackerNews ---");
   const hnPosts = await fetchHackerNews();
-  const cutoffTimeHN = Date.now() - (24 * 60 * 60 * 1000); // 24 hours in ms
+  const cutoffTimeHN = Date.now() - (48 * 60 * 60 * 1000); // 48 hours in ms for HN
   for (const post of hnPosts) {
     if (!post.time || post.time * 1000 < cutoffTimeHN) continue;
-    if (!post.title || post.title.length < 10) continue;
+    if (!post.title || post.title.length < 5) continue;
     const bodyText = post.text || "";
+    // For HN Ask posts, lower threshold since titles are short
+    const isAskHN = post.title.toLowerCase().startsWith("ask hn");
     const { score, signals, category } = scorePost(post.title, bodyText);
-    if (score >= 2) {
+    const threshold = isAskHN ? 1 : 2;
+    if (score >= threshold) {
       const url = `https://news.ycombinator.com/item?id=${post.id}`;
       const sourceKey = `hn:${post.id}`;
       if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
