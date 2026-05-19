@@ -541,6 +541,45 @@ async function fetchSubreddit(subreddit) {
   } catch (error) { console.log(`Error fetching r/${subreddit}:`, error.message); return []; }
 }
 
+async function fetchHackerNews() {
+  try {
+    console.log("Checking HackerNews...");
+    // Fetch top stories and new stories from HN API
+    const [topRes, newRes] = await Promise.all([
+      fetch("https://hacker-news.firebaseio.com/v0/newstories.json"),
+      fetch("https://hacker-news.firebaseio.com/v0/askstories.json")
+    ]);
+    
+    const topIds = await topRes.json();
+    const askIds = await newRes.json();
+    
+    // Combine and take first 100 from each
+    const ids = [...new Set([...topIds.slice(0, 100), ...askIds.slice(0, 50)])];
+    
+    const posts = [];
+    // Fetch stories in batches
+    for (let i = 0; i < Math.min(ids.length, 150); i += 10) {
+      const batch = ids.slice(i, i + 10);
+      const batchResults = await Promise.all(
+        batch.map(id => 
+          fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`)
+            .then(r => r.json())
+            .catch(() => null)
+        )
+      );
+      posts.push(...batchResults.filter(p => p && p.title && !p.dead && !p.deleted));
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    
+    console.log(`HackerNews: ${posts.length} posts fetched`);
+    return posts;
+  } catch (error) {
+    console.log("HackerNews fetch error:", error.message);
+    return [];
+  }
+}
+
+
 async function bskyLogin() {
   try {
     const response = await fetch("https://bsky.social/xrpc/com.atproto.server.createSession", {
@@ -652,6 +691,33 @@ async function runKonBao() {
         }
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+
+  console.log("\n--- Checking HackerNews ---");
+  const hnPosts = await fetchHackerNews();
+  const cutoffTimeHN = Date.now() - (24 * 60 * 60 * 1000); // 24 hours in ms
+  for (const post of hnPosts) {
+    if (!post.time || post.time * 1000 < cutoffTimeHN) continue;
+    if (!post.title || post.title.length < 10) continue;
+    const bodyText = post.text || "";
+    const { score, signals, category } = scorePost(post.title, bodyText);
+    if (score >= 2) {
+      const url = `https://news.ycombinator.com/item?id=${post.id}`;
+      const sourceKey = `hn:${post.id}`;
+      if (!seenUrls.has(url) && !seenSources.has(sourceKey)) {
+        seenUrls.add(url);
+        seenSources.add(sourceKey);
+        candidates.push({
+          platform: "HackerNews", source: `HN`,
+          title: post.title,
+          url, score, signals, category,
+          postScore: post.score || 0, comments: post.descendants || 0,
+          created: new Date(post.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+          fullText: post.title + " " + bodyText.substring(0, 500)
+        });
+      }
     }
   }
 
