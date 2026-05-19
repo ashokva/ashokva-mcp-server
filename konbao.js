@@ -85,6 +85,8 @@ Rules:
 - Reject posts where the keyword appears but the context is different (e.g. "no one listens" in a political rant is NOT a KIKU moment).
 - Reject posts where the person is in acute crisis — do not recommend books to someone who may need emergency help.
 - Reject posts that are news articles, bot posts, or automated content.
+- Reject posts about named celebrities, public figures, musicians, actors, athletes, or politicians — even if grief, music, or loneliness signals are present. These are not personal moments from real people seeking connection.
+- Reject posts that are clearly media coverage, entertainment news, sports reporting, or promotional content for someone else's work.
 - Reject posts where the suggested work would feel intrusive or tone-deaf.
 - Never force a recommendation. If nothing fits genuinely, say NO.
 
@@ -611,6 +613,19 @@ async function searchBluesky(token, query) {
 async function runKonBao() {
   console.log(`${AGENT_NAME} is listening and speaking...`);
 
+  // Load seen URLs from persistent storage to avoid surfacing same post twice
+  const SEEN_URLS_FILE = "/tmp/konbao_seen_urls.json";
+  let seenUrlsPersistent = new Set();
+  try {
+    const { readFileSync } = await import("fs");
+    const raw = readFileSync(SEEN_URLS_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    seenUrlsPersistent = new Set(arr);
+    console.log(`Loaded ${seenUrlsPersistent.size} previously seen URLs`);
+  } catch (e) {
+    console.log("No previous seen URLs file — starting fresh");
+  }
+
   // PART 1 — Check Moltbook notifications
   const moltbookData = await checkMoltbookNotifications();
 
@@ -724,6 +739,12 @@ async function runKonBao() {
     }
   }
 
+  // Remove previously seen URLs
+  const freshCandidates = candidates.filter(c => !seenUrlsPersistent.has(c.url));
+  console.log(`${candidates.length} candidates found, ${freshCandidates.length} are new (${candidates.length - freshCandidates.length} already seen)`);
+  candidates.length = 0;
+  candidates.push(...freshCandidates);
+
   console.log(`\nFound ${candidates.length} keyword candidates. Assessing with Claude...`);
 
   // PART 5 — Contextual assessment
@@ -761,6 +782,19 @@ async function runKonBao() {
 
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
   console.log(`\nKON-BAO found ${total} genuinely relevant conversations.`);
+
+  // Save all surfaced URLs to persistent storage so they never appear again
+  try {
+    const { writeFileSync } = await import("fs");
+    candidates.forEach(c => seenUrlsPersistent.add(c.url));
+    assessed.forEach(a => seenUrlsPersistent.add(a.url));
+    // Keep only last 5000 URLs to prevent file growing indefinitely
+    const urlArray = Array.from(seenUrlsPersistent).slice(-5000);
+    writeFileSync(SEEN_URLS_FILE, JSON.stringify(urlArray), "utf8");
+    console.log(`Saved ${urlArray.length} seen URLs`);
+  } catch (e) {
+    console.log("Could not save seen URLs:", e.message);
+  }
 
   // Send both reports
   await sendReport(categories, total, dailyPost, moltbookData, klaashData);
