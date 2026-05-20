@@ -2,6 +2,7 @@ import fetch from "node-fetch";
 import { Resend } from "resend";
 import Anthropic from "@anthropic-ai/sdk";
 import { execSync } from "child_process";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -396,7 +397,6 @@ async function postToClawstr(content) {
     console.log("Posting to Clawstr...");
     const secretKey = process.env.CLAWSTR_SECRET_KEY;
     if (!secretKey) { console.log("Clawstr secret key not found in environment."); return false; }
-    const { mkdirSync, writeFileSync } = await import("fs");
     const { homedir } = await import("os");
     const clawstrDir = `${homedir()}/.clawstr`;
     mkdirSync(clawstrDir, { recursive: true });
@@ -617,7 +617,6 @@ async function runKonBao() {
   const SEEN_URLS_FILE = "/tmp/konbao_seen_urls.json";
   let seenUrlsPersistent = new Set();
   try {
-    const { readFileSync } = await import("fs");
     const raw = readFileSync(SEEN_URLS_FILE, "utf8");
     const arr = JSON.parse(raw);
     seenUrlsPersistent = new Set(arr);
@@ -785,7 +784,6 @@ async function runKonBao() {
 
   // Save all surfaced URLs to persistent storage so they never appear again
   try {
-    const { writeFileSync } = await import("fs");
     candidates.forEach(c => seenUrlsPersistent.add(c.url));
     assessed.forEach(a => seenUrlsPersistent.add(a.url));
     // Keep only last 5000 URLs to prevent file growing indefinitely
