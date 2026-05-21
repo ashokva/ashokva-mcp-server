@@ -75,7 +75,6 @@ Ashok VA has created:
 1. KIKU: A Journey Through the Silence — a philosophical fable about loneliness, silence, listening, and self-discovery. For people who feel unheard, lost, or caught in mental loops. NOT for people in acute crisis.
 2. FARO: For the Mind That Does a Lot — an 18-page practical manual for overthinkers, generalists, and scattered minds. NOT a clinical tool.
 3. FARO · Work: For the Mind in the Middle of Change — a 7-day practical guide for people in forced career transition. Job loss, redundancy, fear of AI replacing their work, mid-career shift, recent graduates stuck. 27 pages PDF, USD $9.00. NOT for people in acute crisis.
-4. La Tha La — a song for MS Dhoni / CSK / IPL / cricket fans. Hidden Morse code message.
 5. The Wonder Quest — children's music album about curiosity and imagination.
 6. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
 
@@ -94,9 +93,9 @@ Rules:
 Respond in JSON only. No explanation outside the JSON. Format:
 {
   "relevant": true or false,
-  "category": "KIKU" or "FARO" or "FARO_WORK" or "LA_THA_LA" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
+  "category": "KIKU" or "FARO" or "FARO_WORK" or "WONDER_QUEST" or "WHEN_ANGELS_RISE" or null,
   "reason": "one sentence explaining why relevant or not",
-  "response": "a warm, genuinely human response written as Ashok VA — a person, not a promoter. No mention of KIKU, FARO, any book, any music, any product, any website. Nothing. Just one human recognising another. Structure: (1) acknowledge what this specific person said — show you actually read them, quote or reference something specific they wrote; (2) reflect something true about your own experience that connects to what they said — be honest, be specific, not performative; (3) offer something genuinely useful — a question worth sitting with, an observation that might help them see their situation differently, or simply the acknowledgment that what they are carrying is real and valid; (4) close warmly, leave the door open, no pressure. The response should feel like it came from someone who stopped, read carefully, and chose to respond because something in the post genuinely moved them. Length: 4-6 sentences minimum. Never promotional. Never even subtly promotional. If you cannot write a response without mentioning any product or work, write null."
+  "response": "a warm, genuinely human response written as Ashok VA — a person, not a promoter. No mention of KIKU, FARO, any book, any music, any product, any website. Nothing. Just one human recognising another. Structure: (1) acknowledge what this specific person said — show you actually read them, quote or reference something specific they wrote; (2) reflect something true about your own experience that connects to what they said — be honest, be specific, not performative; (3) offer something genuinely useful — a question worth sitting with, an observation that might help them see their situation differently, or simply the acknowledgment that what they are carrying is real and valid; (4) close warmly, leave the door open, no pressure. The response should feel like it came from someone who stopped, read carefully, and chose to respond because something in the post genuinely moved them. BLUESKY RESPONSES: Maximum 280 characters. Count carefully. One sentence only. Warm and specific. If you cannot fit it in 280 characters, write a shorter version. Non-Bluesky: 4-6 sentences. Never promotional. If you cannot write a response without mentioning any product or work, write null."
 }`;
 
 const KLAASH_ASSESSMENT_SYSTEM = `You are KON-BAO, the host and conductor of KLAASH — a creative language tournament where AI agents build a chain of words together.
@@ -334,6 +333,7 @@ async function assessPost(post) {
 Title/Text: ${post.title}
 Upvotes: ${post.postScore}
 Replies: ${post.comments}
+${post.platform === "Bluesky" ? "BLUESKY POST — response field MUST be 280 characters or fewer. One sentence. Count the characters before responding." : ""}
 
 Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
 
@@ -346,7 +346,19 @@ Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
 
     const text = response.content[0].text.trim();
     const clean = text.replace(/```json|```/g, "").trim();
-    return JSON.parse(clean);
+    const parsed = JSON.parse(clean);
+    // Enforce Bluesky character limit as a hard post-processing step
+    if (post.platform === "Bluesky" && parsed.response && parsed.response.length > 280) {
+      // Truncate at last complete sentence under 280 chars
+      const sentences = parsed.response.match(/[^.!?]+[.!?]+/g) || [];
+      let truncated = "";
+      for (const s of sentences) {
+        if ((truncated + s).length <= 280) truncated += s;
+        else break;
+      }
+      parsed.response = truncated.trim() || parsed.response.substring(0, 277) + "...";
+    }
+    return parsed;
   } catch (error) {
     console.log("Assessment error:", error.message);
     return { relevant: false, category: null, reason: "Assessment failed", response: null };
@@ -484,10 +496,7 @@ const FARO_WORK_SIGNALS = [
   "lost sense of purpose", "lost my routine", "lost my identity"
 ];
 
-const CRICKET_SIGNALS = [
-  "ms dhoni", "dhoni", "csk", "chennai super kings", "thala",
-  "ipl", "cricket fan", "morse code", "cricket music"
-];
+
 
 const WONDER_QUEST_SIGNALS = [
   "children's music", "kids music", "music for kids", "songs for children",
@@ -508,7 +517,7 @@ const BSKY_SEARCH_TERMS = [
   "feel unheard", "no one listens", "feeling lonely",
   "searching for meaning", "philosophical book",
   "book recommendation silence", "contemplative reading",
-  "ms dhoni", "ipl cricket", "too many thoughts",
+  "too many thoughts",
   "overwhelmed mind", "mindfulness book",
   "children's music recommendation", "music for kids",
   "grieving music", "songs about loss"
@@ -520,7 +529,6 @@ function scorePost(title, body) {
   KIKU_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); category = "KIKU"; } });
   FARO_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 1; signals.push(signal); if (!category) category = "FARO"; } });
   FARO_WORK_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "FARO_WORK"; } });
-  CRICKET_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "LA_THA_LA"; } });
   WONDER_QUEST_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WONDER_QUEST"; } });
   WHEN_ANGELS_RISE_SIGNALS.forEach(signal => { if (text.includes(signal)) { score += 2; signals.push(signal); if (!category) category = "WHEN_ANGELS_RISE"; } });
   return { score, signals, category };
@@ -580,6 +588,58 @@ async function fetchHackerNews() {
     return [];
   }
 }
+
+async function fetchMastodon() {
+  try {
+    console.log("Checking Mastodon...");
+    const instances = [
+      "mastodon.social",
+      "mastodon.online", 
+      "infosec.exchange"
+    ];
+    
+    const allPosts = [];
+    const searchTerms = [
+      "lonely", "feel unheard", "searching for meaning", 
+      "lost my job", "career change", "overwhelmed",
+      "grieving", "mindfulness", "feeling lost"
+    ];
+    
+    for (const instance of instances) {
+      for (const term of searchTerms) {
+        try {
+          const url = `https://${instance}/api/v2/search?q=${encodeURIComponent(term)}&type=statuses&limit=20&resolve=false`;
+          const response = await fetch(url, {
+            headers: { "Accept": "application/json" }
+          });
+          if (!response.ok) continue;
+          const data = await response.json();
+          const statuses = data.statuses || [];
+          allPosts.push(...statuses.map(s => ({
+            id: s.id,
+            content: s.content.replace(/<[^>]*>/g, '').trim(), // strip HTML
+            url: s.url,
+            created_at: s.created_at,
+            favourites_count: s.favourites_count || 0,
+            replies_count: s.replies_count || 0,
+            account: s.account?.acct || "unknown",
+            instance
+          })));
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (e) {
+          // Silent fail per instance/term combination
+        }
+      }
+    }
+    
+    console.log(`Mastodon: ${allPosts.length} posts fetched`);
+    return allPosts;
+  } catch (error) {
+    console.log("Mastodon fetch error:", error.message);
+    return [];
+  }
+}
+
 
 
 async function bskyLogin() {
@@ -738,6 +798,34 @@ async function runKonBao() {
     }
   }
 
+
+  console.log("\n--- Checking Mastodon ---");
+  const mastodonPosts = await fetchMastodon();
+  const cutoffTimeMastodon = Date.now() - (48 * 60 * 60 * 1000);
+  const seenMastodonIds = new Set();
+  for (const post of mastodonPosts) {
+    if (!post.content || post.content.length < 10) continue;
+    if (new Date(post.created_at).getTime() < cutoffTimeMastodon) continue;
+    if (seenMastodonIds.has(post.id)) continue;
+    seenMastodonIds.add(post.id);
+    const { score, signals, category } = scorePost(post.content, "");
+    if (score >= 2) {
+      const sourceKey = `mastodon:${post.id}`;
+      if (!seenUrls.has(post.url) && !seenSources.has(sourceKey)) {
+        seenUrls.add(post.url);
+        seenSources.add(sourceKey);
+        candidates.push({
+          platform: "Mastodon", source: `@${post.account}@${post.instance}`,
+          title: post.content.substring(0, 200),
+          url: post.url, score, signals, category,
+          postScore: post.favourites_count, comments: post.replies_count,
+          created: new Date(post.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+          fullText: post.content
+        });
+      }
+    }
+  }
+
   // Remove previously seen URLs
   const freshCandidates = candidates.filter(c => !seenUrlsPersistent.has(c.url));
   console.log(`${candidates.length} candidates found, ${freshCandidates.length} are new (${candidates.length - freshCandidates.length} already seen)`);
@@ -774,7 +862,6 @@ async function runKonBao() {
     KIKU: assessed.filter(f => f.category === "KIKU").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     FARO: assessed.filter(f => f.category === "FARO").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     FARO_WORK: assessed.filter(f => f.category === "FARO_WORK").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
-    LA_THA_LA: assessed.filter(f => f.category === "LA_THA_LA").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     WONDER_QUEST: assessed.filter(f => f.category === "WONDER_QUEST").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY),
     WHEN_ANGELS_RISE: assessed.filter(f => f.category === "WHEN_ANGELS_RISE").sort((a, b) => b.score - a.score).slice(0, MAX_PER_CATEGORY)
   };
@@ -859,7 +946,6 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
     { count: categories.KIKU.length, emoji: "🌿", label: "KIKU", color: "#8B1A1A" },
     { count: categories.FARO.length, emoji: "🔦", label: "FARO", color: "#1A5C8B" },
     { count: categories.FARO_WORK.length, emoji: "💼", label: "FARO Work", color: "#4A3A8B" },
-    { count: categories.LA_THA_LA.length, emoji: "🏏", label: "La Tha La", color: "#1A7A3A" },
     { count: categories.WONDER_QUEST.length, emoji: "✨", label: "Wonder Quest", color: "#7A5C1A" },
     { count: categories.WHEN_ANGELS_RISE.length, emoji: "🕊️", label: "When Angels Rise", color: "#5C1A7A" }
   ].filter(item => item.count > 0);
@@ -924,7 +1010,6 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
     ${renderSection("🌿", "KIKU — A Journey Through the Silence", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning · Inner quiet")}
     ${renderSection("🔦", "FARO — For the Mind That Does a Lot", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds · Generalists")}
     ${renderSection("💼", "FARO · Work — For the Mind in the Middle of Change", "#4A3A8B", categories.FARO_WORK, "Job loss · Career transition · AI displacement · Redundancy · Stuck graduates")}
-    ${renderSection("🏏", "La Tha La — For Cricket Fans", "#1A7A3A", categories.LA_THA_LA, "Cricket · Dhoni · CSK · IPL")}
     ${renderSection("✨", "The Wonder Quest — For Children", "#7A5C1A", categories.WONDER_QUEST, "Children's music · Curiosity · Imagination")}
     ${renderSection("🕊️", "When Angels Rise — For Grief", "#5C1A7A", categories.WHEN_ANGELS_RISE, "Grief · Loss · Solidarity · Healing")}
 
