@@ -964,6 +964,10 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
       <div style="font-size: 10px; color: #444; letter-spacing: 2px; margin-bottom: 12px;">Theme territory: ${todayTheme}</div>
       <div style="font-size: 16px; color: #e8e4dc; line-height: 1.75; font-family: Georgia, serif; font-style: italic;">${dailyPost}</div>
       <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
+      <div style="margin-top: 16px; border-top: 1px solid #2a2a2a; padding-top: 12px;">
+        <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 8px;">TODAY'S FULL POST — COPY READY</div>
+        <div style="background: #0a0908; border: 1px solid #333; border-radius: 6px; padding: 12px; font-family: Georgia, serif; font-size: 14px; color: #e8e4dc; line-height: 1.7; white-space: pre-wrap;">${dailyPost}</div>
+      </div>
     </div>` : ""}
 
     <div style="background: #f5f0ff; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
