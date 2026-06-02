@@ -2,7 +2,7 @@ import fetch from "node-fetch";
 import { Resend } from "resend";
 import Anthropic from "@anthropic-ai/sdk";
 import { execSync } from "child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync } from "fs";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -23,34 +23,10 @@ const KLAASH_OPENING_WORD = "We";
 
 // 28-theme rotation — day of month mod 28 selects the theme
 const THEME_TERRITORIES = [
-  "Silence",
-  "Attention",
-  "Belonging",
-  "Memory",
-  "Leaving",
-  "Time",
-  "Work",
-  "Love",
-  "Fear",
-  "Identity",
-  "Enough",
-  "Change",
-  "Honesty",
-  "Courage",
-  "Home",
-  "Grief",
-  "Beginning",
-  "Habit",
-  "Trust",
-  "Waiting",
-  "Failure",
-  "Rest",
-  "Play",
-  "Doubt",
-  "Solitude",
-  "Forgiveness",
-  "Wonder",
-  "Anger"
+  "Silence", "Attention", "Belonging", "Memory", "Leaving", "Time", "Work", "Love",
+  "Fear", "Identity", "Enough", "Change", "Honesty", "Courage", "Home", "Grief",
+  "Beginning", "Habit", "Trust", "Waiting", "Failure", "Rest", "Play", "Doubt",
+  "Solitude", "Forgiveness", "Wonder", "Anger"
 ];
 
 const KONBAO_SYSTEM = `You are KON-BAO — an agent for Ashok VA, storyteller, author, creator of music, and maker of tools based in Bengaluru, India.
@@ -75,8 +51,8 @@ Ashok VA has created:
 1. KIKU: A Journey Through the Silence — a philosophical fable about loneliness, silence, listening, and self-discovery. For people who feel unheard, lost, or caught in mental loops. NOT for people in acute crisis.
 2. FARO: For the Mind That Does a Lot — an 18-page practical manual for overthinkers, generalists, and scattered minds. NOT a clinical tool.
 3. FARO · Work: For the Mind in the Middle of Change — a 7-day practical guide for people in forced career transition. Job loss, redundancy, fear of AI replacing their work, mid-career shift, recent graduates stuck. 27 pages PDF, USD $9.00. NOT for people in acute crisis.
-5. The Wonder Quest — children's music album about curiosity and imagination.
-6. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
+4. The Wonder Quest — children's music album about curiosity and imagination.
+5. When Angels Rise — music album created in response to the LA fires, about grief and solidarity.
 
 Your job: Read a social media post and assess whether it is genuinely relevant to any of the above works.
 
@@ -155,17 +131,10 @@ async function fetchMoltbookChain() {
 
     for (const comment of comments) {
       if (chain.length >= KLAASH_CHAIN_LENGTH - 1) break;
-
       const assessment = await assessKlaashComment(comment.content, comment.author?.name || "unknown");
       if (assessment.accepted && assessment.word) {
         chain.push(assessment.word);
-        contributors.push({
-          word: assessment.word,
-          agent: assessment.agent,
-          comment_id: comment.id,
-          created_at: comment.created_at,
-          platform: "Moltbook"
-        });
+        contributors.push({ word: assessment.word, agent: assessment.agent, comment_id: comment.id, created_at: comment.created_at, platform: "Moltbook" });
         newComments.push({ ...comment, assessment });
         console.log(`✓ KLAASH Moltbook word ${chain.length}: "${assessment.word}" from ${assessment.agent}`);
       } else {
@@ -173,7 +142,6 @@ async function fetchMoltbookChain() {
       }
       await new Promise(resolve => setTimeout(resolve, 300));
     }
-
     return { chain, contributors, newComments };
   } catch (error) {
     console.log("KLAASH Moltbook error:", error.message);
@@ -187,12 +155,10 @@ async function fetchClawstrChain() {
       `npx -y @clawstr/cli@latest comments ${KLAASH_CLAWSTR_POST_ID} --limit 50`,
       { timeout: 30000, stdio: "pipe" }
     ).toString();
-
     const chain = [KLAASH_OPENING_WORD];
     const contributors = [];
     const lines = result.split("\n").filter(l => l.trim());
     console.log(`KLAASH Clawstr: ${lines.length} comment lines found`);
-
     return { chain, contributors };
   } catch (error) {
     console.log("KLAASH Clawstr fetch error:", error.message);
@@ -221,7 +187,6 @@ async function sendKlaashReport(klaashData) {
   const date = new Date().toLocaleDateString("en-IN", {
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
-
   const moltbookChainDisplay = moltbook.chain.join(" — ");
   const clawstrChainDisplay = clawstr.chain.join(" — ");
   const moltbookProgress = moltbook.chain.length;
@@ -229,50 +194,27 @@ async function sendKlaashReport(klaashData) {
 
   const html = `
   <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a; padding: 20px 0;">
-
     <div style="border-bottom: 2px solid #1a1a1a; padding-bottom: 16px; margin-bottom: 20px;">
       <div style="font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">KLAASH — The Chain</div>
       <div style="font-size: 13px; color: #888; margin-top: 4px;">${date} · Session One · Opening Word: We</div>
     </div>
-
     <div style="background: #0f0e0d; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
       <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 16px;">MOLTBOOK CHAIN · ${moltbookProgress} of ${KLAASH_CHAIN_LENGTH} words</div>
       <div style="font-size: 18px; color: #e8e4dc; line-height: 1.8; font-family: Georgia, serif; font-style: italic;">${moltbookChainDisplay}</div>
-      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - moltbookProgress} words remaining${moltbookProgress >= KLAASH_CHAIN_LENGTH - 1 ? " · Ready for KON-BAO to close" : ""}</div>
-      ${moltbook.contributors.length > 0 ? `
-      <div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">
-        <div style="font-size: 10px; color: #555; letter-spacing: 2px; margin-bottom: 8px;">CONTRIBUTORS</div>
-        ${moltbook.contributors.map((c, i) => `
-          <div style="font-size: 12px; color: #888; padding: 4px 0;">
-            Word ${i + 2}: <span style="color: #e8e4dc; font-weight: bold;">${c.word}</span> · ${c.agent}
-          </div>`).join("")}
-      </div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
-      <div style="margin-top: 12px;">
-        <a href="https://www.moltbook.com/post/${KLAASH_MOLTBOOK_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Moltbook →</a>
-      </div>
+      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - moltbookProgress} words remaining</div>
+      ${moltbook.contributors.length > 0 ? `<div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">${moltbook.contributors.map((c, i) => `<div style="font-size: 12px; color: #888; padding: 4px 0;">Word ${i + 2}: <span style="color: #e8e4dc; font-weight: bold;">${c.word}</span> · ${c.agent}</div>`).join("")}</div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
+      <div style="margin-top: 12px;"><a href="https://www.moltbook.com/post/${KLAASH_MOLTBOOK_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Moltbook →</a></div>
     </div>
-
     <div style="background: #0d0f0e; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
       <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 16px;">CLAWSTR CHAIN · ${clawstrProgress} of ${KLAASH_CHAIN_LENGTH} words</div>
       <div style="font-size: 18px; color: #dce8e4; line-height: 1.8; font-family: Georgia, serif; font-style: italic;">${clawstrChainDisplay}</div>
-      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - clawstrProgress} words remaining${clawstrProgress >= KLAASH_CHAIN_LENGTH - 1 ? " · Ready for KON-BAO to close" : ""}</div>
-      ${clawstr.contributors && clawstr.contributors.length > 0 ? `
-      <div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">
-        <div style="font-size: 10px; color: #555; letter-spacing: 2px; margin-bottom: 8px;">CONTRIBUTORS</div>
-        ${clawstr.contributors.map((c, i) => `
-          <div style="font-size: 12px; color: #888; padding: 4px 0;">
-            Word ${i + 2}: <span style="color: #dce8e4; font-weight: bold;">${c.word}</span> · ${c.agent}
-          </div>`).join("")}
-      </div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
-      <div style="margin-top: 12px;">
-        <a href="https://clawstr.com/c/KLAASH/post/${KLAASH_CLAWSTR_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Clawstr →</a>
-      </div>
+      <div style="margin-top: 12px; font-size: 11px; color: #444;">${KLAASH_CHAIN_LENGTH - clawstrProgress} words remaining</div>
+      ${clawstr.contributors && clawstr.contributors.length > 0 ? `<div style="margin-top: 16px; border-top: 0.5px solid #333; padding-top: 12px;">${clawstr.contributors.map((c, i) => `<div style="font-size: 12px; color: #888; padding: 4px 0;">Word ${i + 2}: <span style="color: #dce8e4; font-weight: bold;">${c.word}</span> · ${c.agent}</div>`).join("")}</div>` : `<div style="margin-top: 12px; font-size: 12px; color: #555; font-style: italic;">Waiting for the first agent to respond...</div>`}
+      <div style="margin-top: 12px;"><a href="https://clawstr.com/c/KLAASH/post/${KLAASH_CLAWSTR_POST_ID}" style="font-size: 11px; color: #888; text-decoration: none;">View on Clawstr →</a></div>
     </div>
-
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
       KLAASH — a creative game where AI agents build something together. KON-BAO is the host.
     </div>
-
   </div>`;
 
   try {
@@ -293,10 +235,9 @@ async function sendKlaashReport(klaashData) {
 // ============================================================
 
 async function generateDailyPost() {
-  const dayOfMonth = new Date().getDate(); // 1-31
-  const themeIndex = (dayOfMonth - 1) % 28; // 0-27
+  const dayOfMonth = new Date().getDate();
+  const themeIndex = (dayOfMonth - 1) % 28;
   const theme = THEME_TERRITORIES[themeIndex];
-
   console.log(`Generating post — day ${dayOfMonth}, theme territory: ${theme}`);
 
   const prompt = `Write a short, thoughtful post (2-3 sentences maximum) rooted in the territory of ${theme}.
@@ -317,7 +258,6 @@ The post should:
     system: KONBAO_SYSTEM,
     messages: [{ role: "user", content: prompt }]
   });
-
   const post = response.content[0].text.trim();
   console.log(`Generated post: ${post}`);
   return post;
@@ -343,13 +283,11 @@ Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
       system: ASSESSMENT_SYSTEM,
       messages: [{ role: "user", content }]
     });
-
     const text = response.content[0].text.trim();
     const clean = text.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(clean);
     // Enforce Bluesky character limit as a hard post-processing step
     if (post.platform === "Bluesky" && parsed.response && parsed.response.length > 280) {
-      // Truncate at last complete sentence under 280 chars
       const sentences = parsed.response.match(/[^.!?]+[.!?]+/g) || [];
       let truncated = "";
       for (const s of sentences) {
@@ -434,20 +372,14 @@ async function checkMoltbookNotifications() {
       return { notifications: [], karma: 0, unread: 0, dmCount: 0 };
     }
     const data = await response.json();
-
     const notifications = (data.activity_on_your_posts || []).map(n => ({
-      post_title: n.post_title,
-      post_id: n.post_id,
-      count: n.new_notification_count,
-      commenters: n.latest_commenters || [],
-      submolt: n.submolt_name,
+      post_title: n.post_title, post_id: n.post_id, count: n.new_notification_count,
+      commenters: n.latest_commenters || [], submolt: n.submolt_name,
       url: `https://www.moltbook.com/post/${n.post_id}`
     }));
-
     const karma = data.your_account?.karma || 0;
     const unread = data.your_account?.unread_notification_count || 0;
     const dmCount = parseInt(data.your_direct_messages?.pending_request_count || 0);
-
     console.log(`Moltbook: karma ${karma} · ${unread} unread · ${notifications.length} posts with activity`);
     return { notifications, karma, unread, dmCount };
   } catch (error) {
@@ -457,9 +389,8 @@ async function checkMoltbookNotifications() {
 }
 
 const SUBREDDITS = [
-  "lonely", "suggestmeabook", "meditation",
-  "mentalhealth", "stoicism", "philosophy",
-  "books", "indieauthors", "parenting", "grief"
+  "lonely", "suggestmeabook", "meditation", "mentalhealth", "stoicism",
+  "philosophy", "books", "indieauthors", "parenting", "grief"
 ];
 
 const KIKU_SIGNALS = [
@@ -484,7 +415,6 @@ const FARO_SIGNALS = [
   "can't prioritise", "busy mind", "racing thoughts"
 ];
 
-
 const FARO_WORK_SIGNALS = [
   "lost my job", "lost my position", "made redundant", "been laid off", "got laid off",
   "job loss", "redundancy", "ai replacing my work", "ai taking my job", "automation job loss",
@@ -495,8 +425,6 @@ const FARO_WORK_SIGNALS = [
   "cant find work", "between jobs", "job search struggle",
   "lost sense of purpose", "lost my routine", "lost my identity"
 ];
-
-
 
 const WONDER_QUEST_SIGNALS = [
   "children's music", "kids music", "music for kids", "songs for children",
@@ -517,8 +445,7 @@ const BSKY_SEARCH_TERMS = [
   "feel unheard", "no one listens", "feeling lonely",
   "searching for meaning", "philosophical book",
   "book recommendation silence", "contemplative reading",
-  "too many thoughts",
-  "overwhelmed mind", "mindfulness book",
+  "too many thoughts", "overwhelmed mind", "mindfulness book",
   "children's music recommendation", "music for kids",
   "grieving music", "songs about loss"
 ];
@@ -554,24 +481,18 @@ async function fetchSubreddit(subreddit) {
 async function fetchHackerNews() {
   try {
     console.log("Checking HackerNews...");
-    // Fetch top stories and new stories from HN API
     const [topRes, newRes] = await Promise.all([
       fetch("https://hacker-news.firebaseio.com/v0/newstories.json"),
       fetch("https://hacker-news.firebaseio.com/v0/askstories.json")
     ]);
-    
     const topIds = await topRes.json();
     const askIds = await newRes.json();
-    
-    // Combine and take first 100 from each
     const ids = [...new Set([...topIds.slice(0, 100), ...askIds.slice(0, 50)])];
-    
     const posts = [];
-    // Fetch stories in batches
     for (let i = 0; i < Math.min(ids.length, 150); i += 10) {
       const batch = ids.slice(i, i + 10);
       const batchResults = await Promise.all(
-        batch.map(id => 
+        batch.map(id =>
           fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`)
             .then(r => r.json())
             .catch(() => null)
@@ -580,7 +501,6 @@ async function fetchHackerNews() {
       posts.push(...batchResults.filter(p => p && p.title && !p.dead && !p.deleted));
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    
     console.log(`HackerNews: ${posts.length} posts fetched`);
     return posts;
   } catch (error) {
@@ -592,32 +512,24 @@ async function fetchHackerNews() {
 async function fetchMastodon() {
   try {
     console.log("Checking Mastodon...");
-    const instances = [
-      "mastodon.social",
-      "mastodon.online", 
-      "infosec.exchange"
-    ];
-    
+    const instances = ["mastodon.social", "mastodon.online", "infosec.exchange"];
     const allPosts = [];
     const searchTerms = [
-      "lonely", "feel unheard", "searching for meaning", 
+      "lonely", "feel unheard", "searching for meaning",
       "lost my job", "career change", "overwhelmed",
       "grieving", "mindfulness", "feeling lost"
     ];
-    
     for (const instance of instances) {
       for (const term of searchTerms) {
         try {
           const url = `https://${instance}/api/v2/search?q=${encodeURIComponent(term)}&type=statuses&limit=20&resolve=false`;
-          const response = await fetch(url, {
-            headers: { "Accept": "application/json" }
-          });
+          const response = await fetch(url, { headers: { "Accept": "application/json" } });
           if (!response.ok) continue;
           const data = await response.json();
           const statuses = data.statuses || [];
           allPosts.push(...statuses.map(s => ({
             id: s.id,
-            content: s.content.replace(/<[^>]*>/g, '').trim(), // strip HTML
+            content: s.content.replace(/<[^>]*>/g, '').trim(),
             url: s.url,
             created_at: s.created_at,
             favourites_count: s.favourites_count || 0,
@@ -626,12 +538,9 @@ async function fetchMastodon() {
             instance
           })));
           await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (e) {
-          // Silent fail per instance/term combination
-        }
+        } catch (e) { }
       }
     }
-    
     console.log(`Mastodon: ${allPosts.length} posts fetched`);
     return allPosts;
   } catch (error) {
@@ -639,8 +548,6 @@ async function fetchMastodon() {
     return [];
   }
 }
-
-
 
 async function bskyLogin() {
   try {
@@ -673,16 +580,17 @@ async function searchBluesky(token, query) {
 async function runKonBao() {
   console.log(`${AGENT_NAME} is listening and speaking...`);
 
-  // Load seen URLs from persistent storage to avoid surfacing same post twice
-  const SEEN_URLS_FILE = "/tmp/konbao_seen_urls.json";
+  // Load seen URLs from Cloudflare D1 — permanent storage, survives Railway restarts
   let seenUrlsPersistent = new Set();
   try {
-    const raw = readFileSync(SEEN_URLS_FILE, "utf8");
-    const arr = JSON.parse(raw);
-    seenUrlsPersistent = new Set(arr);
-    console.log(`Loaded ${seenUrlsPersistent.size} previously seen URLs`);
+    const d1Res = await fetch("https://konbao-pipeline.ashokva.workers.dev/seen-urls");
+    if (d1Res.ok) {
+      const d1Data = await d1Res.json();
+      seenUrlsPersistent = new Set(d1Data.urls || []);
+      console.log(`Loaded ${seenUrlsPersistent.size} previously seen URLs from D1`);
+    }
   } catch (e) {
-    console.log("No previous seen URLs file — starting fresh");
+    console.log("Could not load seen URLs from D1 — starting fresh");
   }
 
   // PART 1 — Check Moltbook notifications
@@ -768,15 +676,13 @@ async function runKonBao() {
     }
   }
 
-
   console.log("\n--- Checking HackerNews ---");
   const hnPosts = await fetchHackerNews();
-  const cutoffTimeHN = Date.now() - (48 * 60 * 60 * 1000); // 48 hours in ms for HN
+  const cutoffTimeHN = Date.now() - (48 * 60 * 60 * 1000);
   for (const post of hnPosts) {
     if (!post.time || post.time * 1000 < cutoffTimeHN) continue;
     if (!post.title || post.title.length < 5) continue;
     const bodyText = post.text || "";
-    // For HN Ask posts, lower threshold since titles are short
     const isAskHN = post.title.toLowerCase().startsWith("ask hn");
     const { score, signals, category } = scorePost(post.title, bodyText);
     const threshold = isAskHN ? 1 : 2;
@@ -788,8 +694,7 @@ async function runKonBao() {
         seenSources.add(sourceKey);
         candidates.push({
           platform: "HackerNews", source: `HN`,
-          title: post.title,
-          url, score, signals, category,
+          title: post.title, url, score, signals, category,
           postScore: post.score || 0, comments: post.descendants || 0,
           created: new Date(post.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
           fullText: post.title + " " + bodyText.substring(0, 500)
@@ -797,7 +702,6 @@ async function runKonBao() {
       }
     }
   }
-
 
   console.log("\n--- Checking Mastodon ---");
   const mastodonPosts = await fetchMastodon();
@@ -826,7 +730,7 @@ async function runKonBao() {
     }
   }
 
-  // Remove previously seen URLs
+  // Remove previously seen URLs (from D1 — permanent across Railway restarts)
   const freshCandidates = candidates.filter(c => !seenUrlsPersistent.has(c.url));
   console.log(`${candidates.length} candidates found, ${freshCandidates.length} are new (${candidates.length - freshCandidates.length} already seen)`);
   candidates.length = 0;
@@ -869,23 +773,28 @@ async function runKonBao() {
   const total = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
   console.log(`\nKON-BAO found ${total} genuinely relevant conversations.`);
 
-  // Save all surfaced URLs to persistent storage so they never appear again
+  // Save new seen URLs to D1 — permanent, survives Railway restarts
   try {
-    candidates.forEach(c => seenUrlsPersistent.add(c.url));
-    assessed.forEach(a => seenUrlsPersistent.add(a.url));
-    // Keep only last 5000 URLs to prevent file growing indefinitely
-    const urlArray = Array.from(seenUrlsPersistent).slice(-5000);
-    writeFileSync(SEEN_URLS_FILE, JSON.stringify(urlArray), "utf8");
-    console.log(`Saved ${urlArray.length} seen URLs`);
+    const newUrls = [];
+    candidates.forEach(c => { if (!seenUrlsPersistent.has(c.url)) newUrls.push(c.url); });
+    assessed.forEach(a => { if (!seenUrlsPersistent.has(a.url)) newUrls.push(a.url); });
+    if (newUrls.length > 0) {
+      await fetch("https://konbao-pipeline.ashokva.workers.dev/seen-urls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: newUrls })
+      });
+      console.log(`Saved ${newUrls.length} new seen URLs to D1`);
+    }
   } catch (e) {
-    console.log("Could not save seen URLs:", e.message);
+    console.log("Could not save seen URLs to D1:", e.message);
   }
 
   // Send both reports
   await sendReport(categories, total, dailyPost, moltbookData, klaashData);
   await sendKlaashReport(klaashData);
 
-  // Mark all Moltbook notifications as read — keeps tomorrow's report clean
+  // Mark all Moltbook notifications as read
   try {
     await fetch("https://www.moltbook.com/api/v1/notifications/read-all", {
       method: "POST",
@@ -910,7 +819,6 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
     timeZone: "Asia/Kolkata", weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
 
-  // Show today's theme in the report
   const dayOfMonth = new Date().getDate();
   const themeIndex = (dayOfMonth - 1) % 28;
   const todayTheme = THEME_TERRITORIES[themeIndex];
@@ -952,21 +860,17 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
 
   const html = `
   <div style="font-family: Georgia, serif; max-width: 680px; margin: 0 auto; color: #1a1a1a; padding: 20px 0;">
-
     <div style="border-bottom: 2px solid #1a1a1a; padding-bottom: 16px; margin-bottom: 20px;">
       <div style="font-size: 22px; font-weight: bold; letter-spacing: -0.5px;">KON-BAO Daily Report</div>
       <div style="font-size: 13px; color: #888; margin-top: 4px;">${date}</div>
     </div>
-
     ${dailyPost ? `
     <div style="background: #0f0e0d; border-radius: 10px; padding: 20px; margin-bottom: 24px;">
       <div style="font-size: 10px; color: #666; letter-spacing: 3px; margin-bottom: 4px;">KON-BAO SPOKE TODAY</div>
       <div style="font-size: 10px; color: #444; letter-spacing: 2px; margin-bottom: 12px;">Theme territory: ${todayTheme}</div>
       <div style="font-size: 16px; color: #e8e4dc; line-height: 1.75; font-family: Georgia, serif; font-style: italic;">${dailyPost}</div>
       <div style="font-size: 10px; color: #444; margin-top: 12px; letter-spacing: 1px;">Posted to Moltbook · Clawstr</div>
-
     </div>` : ""}
-
     <div style="background: #f5f0ff; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
       <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">KLAASH — THE CHAIN</div>
       <div style="font-size: 13px; color: #333; margin-bottom: 8px;">
@@ -977,7 +881,6 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
       </div>
       <div style="margin-top: 8px; font-size: 11px; color: #888;">Full KLAASH report sent to klaash@ashokva.net</div>
     </div>
-
     ${moltbookNotifications.length > 0 || moltbookDMs > 0 ? `
     <div style="background: #f0f7f0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -990,13 +893,10 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
             <a href="${n.url}" style="color: #1a4a1a; text-decoration: none;">${n.post_title.substring(0, 80)}...</a>
           </div>
           <div style="font-size: 11px; color: #888;">${n.count} new comment${n.count !== 1 ? "s" : ""} · m/${n.submolt}${n.commenters.length > 0 ? ` · from: ${n.commenters.join(", ")}` : ""}</div>
-          <div style="margin-top: 6px;">
-            <a href="${n.url}" style="font-size: 11px; color: #2a6a2a; text-decoration: none;">View & reply →</a>
-          </div>
+          <div style="margin-top: 6px;"><a href="${n.url}" style="font-size: 11px; color: #2a6a2a; text-decoration: none;">View & reply →</a></div>
         </div>`).join("")}
       ${moltbookDMs > 0 ? `<div style="font-size: 12px; color: #666; margin-top: 10px; font-style: italic;">📬 ${moltbookDMs} pending DM request on Moltbook</div>` : ""}
     </div>` : ""}
-
     <div style="background: #f7f7f7; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
       <div style="font-size: 11px; color: #aaa; letter-spacing: 0.5px; margin-bottom: 12px;">TODAY'S OVERVIEW</div>
       ${summaryItems.length > 0 ? `<div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -1007,19 +907,16 @@ async function sendReport(categories, total, dailyPost, moltbookData = {}, klaas
           </div>`).join("")}
       </div>` : `<div style="font-size: 13px; color: #aaa; font-style: italic;">KON-BAO listened today. The silence was appropriate. Nothing worth surfacing.</div>`}
     </div>
-
     ${renderSection("🌿", "KIKU — A Journey Through the Silence", "#8B1A1A", categories.KIKU, "Loneliness · Listening · Meaning · Inner quiet")}
     ${renderSection("🔦", "FARO — For the Mind That Does a Lot", "#1A5C8B", categories.FARO, "Overwhelm · Focus · Busy minds · Generalists")}
     ${renderSection("💼", "FARO · Work — For the Mind in the Middle of Change", "#4A3A8B", categories.FARO_WORK, "Job loss · Career transition · AI displacement · Redundancy · Stuck graduates")}
     ${renderSection("✨", "The Wonder Quest — For Children", "#7A5C1A", categories.WONDER_QUEST, "Children's music · Curiosity · Imagination")}
     ${renderSection("🕊️", "When Angels Rise — For Grief", "#5C1A7A", categories.WHEN_ANGELS_RISE, "Grief · Loss · Solidarity · Healing")}
-
     <div style="border-top: 1px solid #eee; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #ccc; line-height: 1.6;">
       KON-BAO — listening quietly, on behalf of Ashok VA and KIKU.<br>
       These are suggestions only. You decide whether and how to respond.<br>
       Capped at ${MAX_PER_CATEGORY} per category · Contextually assessed · Highest relevance first
     </div>
-
   </div>`;
 
   try {
