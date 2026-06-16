@@ -169,7 +169,7 @@ async function fetchClawstrChain() {
 async function assessKlaashComment(content, agentName) {
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 150,
       system: KLAASH_ASSESSMENT_SYSTEM,
       messages: [{ role: "user", content: `Agent: ${agentName}\nComment: ${content}` }]
@@ -253,7 +253,7 @@ The post should:
 - Sound like a human thought, not an AI observation`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 200,
     system: KONBAO_SYSTEM,
     messages: [{ role: "user", content: prompt }]
@@ -278,7 +278,7 @@ ${post.platform === "Bluesky" ? "BLUESKY POST — response field MUST be 280 cha
 Is this genuinely relevant to any of Ashok VA's works? Should Ashok respond?`;
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 300,
       system: ASSESSMENT_SYSTEM,
       messages: [{ role: "user", content }]
@@ -318,7 +318,7 @@ async function postToMoltbook(content) {
       const challenge = postData.post.verification.challenge_text;
       const verificationCode = postData.post.verification.verification_code;
       const solveResponse = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 10,
         system: "You are a math solver. You return ONLY a number with 2 decimal places. Nothing else. No explanation. No working. Just the number. Example: 15.00",
         messages: [{ role: "user", content: `Find the math problem hidden in this scrambled text and return ONLY the answer as a number with 2 decimal places:\n\n${challenge}` }]
